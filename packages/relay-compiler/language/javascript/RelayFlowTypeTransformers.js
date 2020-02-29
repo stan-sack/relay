@@ -8,6 +8,8 @@
  * @format
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
 const t = require('@babel/types');
@@ -19,8 +21,10 @@ const {
 
 import type {Schema, TypeID, EnumTypeID} from '../../core/Schema';
 
+export type BabelTypes = typeof t;
 export type ScalarTypeMapping = {
-  [type: string]: string,
+  [type: string]: string | (BabelTypes => mixed),
+  ...,
 };
 
 import type {State} from './RelayFlowGenerator';
@@ -81,6 +85,9 @@ function transformNonNullableScalarType(
 
 function transformGraphQLScalarType(typeName: string, state: State) {
   const customType = state.customScalars[typeName];
+  if (typeof customType === 'function') {
+    return customType(t);
+  }
   switch (customType ?? typeName) {
     case 'ID':
     case 'String':
@@ -90,10 +97,6 @@ function transformGraphQLScalarType(typeName: string, state: State) {
       return t.numberTypeAnnotation();
     case 'Boolean':
       return t.booleanTypeAnnotation();
-    case 'JSDependency':
-      return exactObjectTypeAnnotation([
-        t.objectTypeProperty(t.identifier('__dr'), t.stringTypeAnnotation()),
-      ]);
     default:
       return customType == null
         ? t.anyTypeAnnotation()
@@ -147,7 +150,7 @@ function transformNonNullableInputType(
       return t.genericTypeAnnotation(t.identifier(typeIdentifier));
     }
     state.generatedInputObjectTypes[typeIdentifier] = 'pending';
-    const fields = schema.getFields(type);
+    const fields = schema.getFields(schema.assertInputObjectType(type));
     const props = fields.map(fieldID => {
       const fieldType = schema.getFieldType(fieldID);
       const fieldName = schema.getFieldName(fieldID);

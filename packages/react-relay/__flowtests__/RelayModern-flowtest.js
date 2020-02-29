@@ -8,11 +8,13 @@
  * @format
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
 const React = require('react');
 
-const nullthrows = require('nullthrows');
+declare function nullthrows<T>(x: ?T): T;
 
 const {
   createContainer: createFragmentContainer,
@@ -33,6 +35,7 @@ import type {
 
 class NotReferencedTest_ extends React.Component<{
   notref: RelayModernFlowtest_notref,
+  ...
 }> {
   render(): React.Node {
     return null;
@@ -50,6 +53,7 @@ const NotReferencedTest = createFragmentContainer(NotReferencedTest_, {
 
 class BadReferenceTest_ extends React.Component<{
   badref: RelayModernFlowtest_badref,
+  ...
 }> {
   render(): React.Node {
     (this.props.badref.id: string);
@@ -80,6 +84,7 @@ class SingularTest extends React.Component<{
   user: RelayModernFlowtest_user,
   nullableUser: ?RelayModernFlowtest_user,
   optionalUser?: RelayModernFlowtest_user,
+  ...
 }> {
   render(): React.Node {
     (nullthrows(this.props.user.name): string);
@@ -104,9 +109,11 @@ class PluralTest extends React.Component<{
   users: RelayModernFlowtest_users,
   nullableUsers: ?RelayModernFlowtest_users,
   optionalUsers?: RelayModernFlowtest_users,
+  ...
 }> {
   render(): React.Node {
     const names = this.props.users.map(user => user.name).filter(Boolean);
+    // $FlowExpectedError
     (names: Array<string>);
     // $FlowExpectedError
     (names: Array<number>);
@@ -123,18 +130,22 @@ PluralTest = createFragmentContainer(PluralTest, {
 
 declare var aUserRef: {
   +$fragmentRefs: RelayModernFlowtest_user$ref,
+  ...
 };
 
 declare var oneOfUsersRef: {
   +$fragmentRefs: RelayModernFlowtest_users$ref,
+  ...
 };
 
 declare var usersRef: $ReadOnlyArray<{
   +$fragmentRefs: RelayModernFlowtest_users$ref,
+  ...
 }>;
 
 declare var nonUserRef: {
-  +$fragmentRefs: {thing: true},
+  +$fragmentRefs: {thing: true, ...},
+  ...
 };
 
 function cb(): void {}
@@ -165,18 +176,21 @@ function cb(): void {}
   optionalUser={aUserRef}
 />;
 
-// $FlowExpectedError - optional, not nullable!
+// $FlowExpectedError - onClick is required
 <SingularTest
   string="x"
   user={aUserRef}
   nullableUser={null}
+  // $FlowExpectedError - optional, not nullable!
   optionalUser={null}
 />;
 
 declare var aComplexUserRef: {
-  +$fragmentRefs: {thing1: true} & RelayModernFlowtest_user$ref & {
+  +$fragmentRefs: {thing1: true, ...} & RelayModernFlowtest_user$ref & {
       thing2: true,
+      ...
     },
+  ...
 };
 <SingularTest
   string="x"
@@ -206,39 +220,15 @@ declare var aComplexUserRef: {
 // $FlowExpectedError - optional, not nullable!
 <PluralTest users={usersRef} nullableUsers={null} optionalUsers={null} />;
 
-class AnyTest extends React.Component<{
+class AnyTest extends React.Component<{|
   anything: any,
-  anyFunction: Function,
-  optionalFunction?: Function,
-  maybeFunction: ?Function,
-  optionalMaybeFunction?: ?Function,
-  anyObject: Object,
-}> {}
-AnyTest = createFragmentContainer(AnyTest, {});
+|}> {}
+const AnyTestContainer = createFragmentContainer(AnyTest, {});
 
-<AnyTest
-  anything={42}
-  anyFunction={() => {}}
-  maybeFunction={null}
-  anyObject={{}}
-/>;
-<AnyTest
-  anything={42}
-  anyFunction={() => {}}
-  maybeFunction={() => {}}
-  anyObject={{}}
-/>;
-// $FlowExpectedError - optional function cannot be null
-<AnyTest
-  anything={42}
-  anyFunction={() => {}}
-  optionalFunction={() => {}}
-  anyObject={{}}
-/>;
-// $FlowExpectedError - can't pass {} for a Function
-<AnyTest
-  anything={42}
-  anyFunction={{}}
-  maybeFunction={() => {}}
-  anyObject={{}}
-/>;
+<AnyTest anything={42} />;
+<AnyTest anything={null} />;
+<AnyTest anything={() => {}} />;
+// $FlowExpectedError - any other prop can not be passed
+<AnyTest anything={null} anythingElse={42} />;
+// $FlowExpectedError - anything has to be passed
+<AnyTest />;

@@ -4,16 +4,18 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  *
- * @flow
+ * @flow strict-local
  * @format
  * @emails oncall+relay
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
-const {generateAndCompile} = require('relay-test-utils-internal');
+const validateMutation = require('../validateMutation');
 
-import validateMutation from '../validateMutation';
+const {generateAndCompile} = require('relay-test-utils-internal');
 
 jest.mock('warning', () => {
   return (dontWarn, message, ...args) => {
@@ -333,8 +335,7 @@ describe('validateOptimisticResponse', () => {
       name: 'Handles Lists',
       mutation: generateAndCompile(`
           mutation ChangeNameMutation(
-            $input: ActorNameChangeInput!,
-            $myVar: Boolean!,
+            $input: ActorNameChangeInput!
           ) {
             actorNameChange(input: $input) {
               actor {
@@ -362,6 +363,153 @@ describe('validateOptimisticResponse', () => {
         myVar: false,
       },
       shouldWarn: false,
+    },
+    {
+      name: 'Handles Lists with null values',
+      mutation: generateAndCompile(`
+          mutation ChangeNameMutation(
+            $input: ActorNameChangeInput!
+          ) {
+            actorNameChange(input: $input) {
+              actor {
+                allPhones {
+                  isVerified
+                }
+              }
+            }
+          }
+      `).ChangeNameMutation,
+      optimisticResponse: {
+        actorNameChange: {
+          actor: {
+            id: 3,
+            __typename: 'Page',
+            allPhones: [null],
+          },
+        },
+      },
+      variables: {
+        myVar: false,
+      },
+      shouldWarn: false,
+    },
+    {
+      name: 'Handles object with null values',
+      mutation: generateAndCompile(`
+          mutation ChangeNameMutation(
+            $input: ActorNameChangeInput!
+          ) {
+            actorNameChange(input: $input) {
+              actor {
+                allPhones {
+                  isVerified
+                }
+              }
+            }
+          }
+      `).ChangeNameMutation,
+      optimisticResponse: {
+        actorNameChange: {
+          actor: {
+            id: 3,
+            __typename: 'Page',
+            allPhones: null,
+          },
+        },
+      },
+      variables: {
+        myVar: false,
+      },
+      shouldWarn: false,
+    },
+    {
+      name: 'Warn when invalid value in the list',
+      mutation: generateAndCompile(`
+          mutation ChangeNameMutation(
+            $input: ActorNameChangeInput!
+          ) {
+            actorNameChange(input: $input) {
+              actor {
+                allPhones {
+                  isVerified
+                }
+              }
+            }
+          }
+      `).ChangeNameMutation,
+      optimisticResponse: {
+        actorNameChange: {
+          actor: {
+            id: 3,
+            __typename: 'Page',
+            allPhones: [
+              {
+                isVerified: true,
+              },
+              // string is invalid because an object is expected here
+              'phone_number',
+            ],
+          },
+        },
+      },
+      variables: {
+        myVar: false,
+      },
+      shouldWarn: true,
+    },
+    {
+      name: 'Handles Lists with scalar fields',
+      mutation: generateAndCompile(`
+          mutation ChangeNameMutation(
+            $input: ActorNameChangeInput!
+          ) {
+            actorNameChange(input: $input) {
+              actor {
+                websites
+              }
+            }
+          }
+      `).ChangeNameMutation,
+      optimisticResponse: {
+        actorNameChange: {
+          actor: {
+            id: 3,
+            __typename: 'Page',
+            websites: ['my website'],
+          },
+        },
+      },
+      variables: {
+        myVar: false,
+      },
+      shouldWarn: false,
+    },
+    {
+      name: 'Warn for invalid values in the list',
+      mutation: generateAndCompile(`
+          mutation ChangeNameMutation(
+            $input: ActorNameChangeInput!
+          ) {
+            actorNameChange(input: $input) {
+              actor {
+                websites
+              }
+            }
+          }
+      `).ChangeNameMutation,
+      optimisticResponse: {
+        actorNameChange: {
+          actor: {
+            id: 3,
+            __typename: 'Page',
+            websites: ['my website', {url: 'http://my-website'}],
+          },
+        },
+      },
+      variables: {
+        myVar: false,
+      },
+      shouldWarn: true,
     },
     {
       name: 'Does not warn when a field is specified as undefined',

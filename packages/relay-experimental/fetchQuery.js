@@ -9,6 +9,8 @@
  * @format
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
 const invariant = require('invariant');
@@ -118,9 +120,13 @@ function fetchQuery<TQuery: OperationType>(
     'fetchQuery: Expected query operation',
   );
   const operation = createOperationDescriptor(queryNode, variables);
-  return RelayRuntimeInternal.fetchQuery(environment, operation, options).map(
-    () => environment.lookup(operation.fragment).data,
-  );
+  const networkCacheConfig = {
+    force: true,
+    ...options?.networkCacheConfig,
+  };
+  return RelayRuntimeInternal.fetchQuery(environment, operation, {
+    networkCacheConfig,
+  }).map(() => environment.lookup(operation.fragment).data);
 }
 
 module.exports = fetchQuery;

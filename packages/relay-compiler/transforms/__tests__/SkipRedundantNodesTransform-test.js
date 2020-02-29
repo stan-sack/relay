@@ -9,17 +9,17 @@
  * @emails oncall+relay
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
-const GraphQLCompilerContext = require('../../core/GraphQLCompilerContext');
-const GraphQLIRPrinter = require('../../core/GraphQLIRPrinter');
+const CompilerContext = require('../../core/CompilerContext');
+const IRPrinter = require('../../core/IRPrinter');
 const InlineFragmentsTransform = require('../InlineFragmentsTransform');
-const RelayMatchTransform = require('../RelayMatchTransform');
-const RelayRelayDirectiveTransform = require('../RelayRelayDirectiveTransform');
-const Schema = require('../../core/Schema');
+const MatchTransform = require('../MatchTransform');
+const RelayDirectiveTransform = require('../RelayDirectiveTransform');
 const SkipRedundantNodesTransform = require('../SkipRedundantNodesTransform');
 
-const {transformASTSchema} = require('../../core/ASTConvert');
 const {
   TestSchema,
   parseGraphQLText,
@@ -27,27 +27,21 @@ const {
 } = require('relay-test-utils-internal');
 
 describe('SkipRedundantNodesTransform', () => {
-  const extendedSchema = transformASTSchema(TestSchema, [
-    RelayMatchTransform.SCHEMA_EXTENSION,
-  ]);
+  const extendedSchema = TestSchema.extend([MatchTransform.SCHEMA_EXTENSION]);
   generateTestsFromFixtures(
     `${__dirname}/fixtures/skip-redundant-nodes-transform`,
     text => {
       const {definitions} = parseGraphQLText(extendedSchema, text);
-      const compilerSchema = Schema.DEPRECATED__create(
-        TestSchema,
-        extendedSchema,
-      );
-      return new GraphQLCompilerContext(compilerSchema)
+      return new CompilerContext(extendedSchema)
         .addAll(definitions)
         .applyTransforms([
-          RelayRelayDirectiveTransform.transform,
-          RelayMatchTransform.transform,
+          RelayDirectiveTransform.transform,
+          MatchTransform.transform,
           InlineFragmentsTransform.transform,
           SkipRedundantNodesTransform.transform,
         ])
         .documents()
-        .map(doc => GraphQLIRPrinter.print(compilerSchema, doc))
+        .map(doc => IRPrinter.print(extendedSchema, doc))
         .join('\n');
     },
   );

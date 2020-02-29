@@ -9,15 +9,16 @@
  * @emails oncall+relay
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
+const CompilerContext = require('../../core/CompilerContext');
 const FlattenTransform = require('../FlattenTransform');
-const GraphQLCompilerContext = require('../../core/GraphQLCompilerContext');
-const GraphQLIRPrinter = require('../../core/GraphQLIRPrinter');
-const RelayMatchTransform = require('../../transforms/RelayMatchTransform');
+const IRPrinter = require('../../core/IRPrinter');
+const MatchTransform = require('../../transforms/MatchTransform');
+const RelayDirectiveTransform = require('../RelayDirectiveTransform');
 const RelayParser = require('../../core/RelayParser');
-const RelayRelayDirectiveTransform = require('../RelayRelayDirectiveTransform');
-const Schema = require('../../core/Schema');
 
 const {
   TestSchema,
@@ -31,23 +32,18 @@ describe('FlattenTransform', () => {
     options: FlattenOptions,
   ): (text: string) => string {
     return text => {
-      const {transformASTSchema} = require('../../core/ASTConvert');
-      const extendedSchema = transformASTSchema(TestSchema, [
-        RelayMatchTransform.SCHEMA_EXTENSION,
-        RelayRelayDirectiveTransform.SCHEMA_EXTENSION,
+      const extendedSchema = TestSchema.extend([
+        MatchTransform.SCHEMA_EXTENSION,
+        RelayDirectiveTransform.SCHEMA_EXTENSION,
       ]);
-      const compilerSchema = Schema.DEPRECATED__create(
-        TestSchema,
-        extendedSchema,
-      );
-      return new GraphQLCompilerContext(compilerSchema)
-        .addAll(RelayParser.parse(compilerSchema, text))
+      return new CompilerContext(extendedSchema)
+        .addAll(RelayParser.parse(extendedSchema, text))
         .applyTransforms([
-          RelayMatchTransform.transform,
+          MatchTransform.transform,
           FlattenTransform.transformWithOptions(options),
         ])
         .documents()
-        .map(doc => GraphQLIRPrinter.print(compilerSchema, doc))
+        .map(doc => IRPrinter.print(extendedSchema, doc))
         .join('\n');
     };
   }

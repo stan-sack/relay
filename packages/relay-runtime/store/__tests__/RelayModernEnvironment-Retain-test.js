@@ -5,9 +5,11 @@
  * LICENSE file in the root directory of this source tree.
  *
  * @format
- * @flow
+ * @flow strict-local
  * @emails oncall+relay
  */
+
+// flowlint ambiguous-object-type:error
 
 'use strict';
 
@@ -61,9 +63,7 @@ describe('retain()', () => {
   });
 
   it('retains data when not disposed', () => {
-    environment.retain(
-      createNormalizationSelector(ParentQuery.root, ROOT_ID, {}),
-    );
+    environment.retain(operation);
     const snapshot = environment.lookup(
       createReaderSelector(
         ParentQuery.fragment,
@@ -82,9 +82,7 @@ describe('retain()', () => {
   });
 
   it('releases data when disposed', () => {
-    const {dispose} = environment.retain(
-      createNormalizationSelector(ParentQuery.root, ROOT_ID, {}),
-    );
+    const {dispose} = environment.retain(operation);
     const selector = createReaderSelector(
       ParentQuery.fragment,
       ROOT_ID,

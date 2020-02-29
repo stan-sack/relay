@@ -9,11 +9,15 @@
  * @emails oncall+relay
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
 const Schema = require('../Schema');
 
-const {Source, parse} = require('graphql');
+const nullthrows = require('../../util/nullthrowsOSS');
+
+const {Source, parse, parseType} = require('graphql');
 
 describe('Schema: RelayCompiler Internal GraphQL Schema Interface', () => {
   describe('getTypeFromString | expectTypeFromString | getTypeString ', () => {
@@ -31,7 +35,7 @@ describe('Schema: RelayCompiler Internal GraphQL Schema Interface', () => {
     it('should throw if type is not available', () => {
       const schema = Schema.create(new Source('type MyType { id: String }'));
       expect(() => schema.expectTypeFromString('UnknownType')).toThrow(
-        'Unable to find type: UnknownType',
+        "Unknown type: 'UnknownType'",
       );
     });
 
@@ -151,6 +155,17 @@ describe('Schema: RelayCompiler Internal GraphQL Schema Interface', () => {
       expect(
         schema.getTypeString(schema.expectTypeFromString('[[MyType]!]!')),
       ).toBe('[[MyType]!]!');
+    });
+
+    test('getTypeFromAST', () => {
+      const schema = Schema.create(new Source('type MyType { id: String }'));
+      const typeAST = parseType('MyType');
+      const unknownTypeAST = parseType('UnknownType');
+      const typeId = schema.getTypeFromAST(typeAST);
+      expect(typeId ? schema.getTypeString(typeId) : 'UnknownType').toBe(
+        'MyType',
+      );
+      expect(schema.getTypeFromAST(unknownTypeAST)).not.toBeDefined();
     });
 
     test('expectTypeFromAST', () => {
@@ -372,9 +387,21 @@ describe('Schema: RelayCompiler Internal GraphQL Schema Interface', () => {
           type C { name: ID }
         `),
       );
-      expect(schema.hasId(schema.expectTypeFromString('A'))).toBe(false);
-      expect(schema.hasId(schema.expectTypeFromString('B'))).toBe(true);
-      expect(schema.hasId(schema.expectTypeFromString('C'))).toBe(false);
+      expect(
+        schema.hasId(
+          schema.assertCompositeType(schema.expectTypeFromString('A')),
+        ),
+      ).toBe(false);
+      expect(
+        schema.hasId(
+          schema.assertCompositeType(schema.expectTypeFromString('B')),
+        ),
+      ).toBe(true);
+      expect(
+        schema.hasId(
+          schema.assertCompositeType(schema.expectTypeFromString('C')),
+        ),
+      ).toBe(false);
     });
 
     describe('getFieldByName | getFieldConfig | getFieldName | getFieldType', () => {
@@ -403,7 +430,9 @@ describe('Schema: RelayCompiler Internal GraphQL Schema Interface', () => {
       });
 
       test('get field', () => {
-        const type = schema.expectTypeFromString('A');
+        const type = schema.assertCompositeType(
+          schema.expectTypeFromString('A'),
+        );
         const idType = schema.expectTypeFromString('ID');
         const field = schema.expectField(type, 'field');
         const fieldConfig = schema.getFieldConfig(field);
@@ -418,7 +447,9 @@ describe('Schema: RelayCompiler Internal GraphQL Schema Interface', () => {
       });
 
       test('get filed with args', () => {
-        const type = schema.expectTypeFromString('A');
+        const type = schema.assertCompositeType(
+          schema.expectTypeFromString('A'),
+        );
         const field = schema.expectField(type, 'fieldWithArgs');
         expect(schema.getFieldConfig(field)).toEqual({
           args: [
@@ -453,7 +484,9 @@ describe('Schema: RelayCompiler Internal GraphQL Schema Interface', () => {
       });
 
       test('getArgByName should return argument config by name', () => {
-        const type = schema.expectTypeFromString('A');
+        const type = schema.assertCompositeType(
+          schema.expectTypeFromString('A'),
+        );
         const field = schema.expectField(type, 'fieldWithArgs');
         const requiredArg = schema.getFieldArgByName(field, 'requiredArg');
         expect(requiredArg).toEqual({
@@ -464,7 +497,9 @@ describe('Schema: RelayCompiler Internal GraphQL Schema Interface', () => {
       });
 
       test('getArgByName - unknown argument', () => {
-        const type = schema.expectTypeFromString('A');
+        const type = schema.assertCompositeType(
+          schema.expectTypeFromString('A'),
+        );
         const field = schema.expectField(type, 'fieldWithArgs');
         const unknownArg = schema.getFieldArgByName(field, 'unknown_arg');
         expect(unknownArg).not.toBeDefined();
@@ -473,7 +508,7 @@ describe('Schema: RelayCompiler Internal GraphQL Schema Interface', () => {
 
     test('getFieldByName for unknown field', () => {
       const schema = Schema.create(new Source('type A { myField: ID }'));
-      const type = schema.expectTypeFromString('A');
+      const type = schema.assertCompositeType(schema.expectTypeFromString('A'));
       const field = schema.getFieldByName(type, 'unknown_field');
       expect(field).not.toBeDefined();
       expect(() => {
@@ -483,7 +518,7 @@ describe('Schema: RelayCompiler Internal GraphQL Schema Interface', () => {
 
     test('getFieldByName for __typename', () => {
       const schema = Schema.create(new Source('type A { myField: ID }'));
-      const type = schema.expectTypeFromString('A');
+      const type = schema.assertCompositeType(schema.expectTypeFromString('A'));
       const field = schema.expectField(type, '__typename');
       const fieldConfig = schema.getFieldConfig(field);
       expect(fieldConfig).toEqual({
@@ -644,11 +679,11 @@ describe('Schema: RelayCompiler Internal GraphQL Schema Interface', () => {
         new Source('directive @my_directive on QUERY'),
       );
       const directives = schema.getDirectives();
-      expect(directives.map(directive => directive.name)).toEqual([
+      expect(directives.map(directive => directive.name).sort()).toEqual([
+        'deprecated',
+        'include',
         'my_directive',
         'skip',
-        'include',
-        'deprecated',
       ]);
     });
 
@@ -661,7 +696,33 @@ describe('Schema: RelayCompiler Internal GraphQL Schema Interface', () => {
         name: 'my_directive',
         locations: ['QUERY'],
         args: [],
-        clientOnlyDirective: false,
+        isClient: false,
+      });
+    });
+
+    it('should return directive with args by name', () => {
+      const schema = Schema.create(
+        new Source(
+          'directive @my_directive(if: Boolean, intValue: Int = 42) on QUERY',
+        ),
+      );
+      const myDirective = schema.getDirective('my_directive');
+      expect(myDirective).toEqual({
+        name: 'my_directive',
+        locations: ['QUERY'],
+        args: [
+          {
+            defaultValue: undefined,
+            name: 'if',
+            type: schema.expectTypeFromString('Boolean'),
+          },
+          {
+            defaultValue: 42,
+            name: 'intValue',
+            type: schema.expectTypeFromString('Int'),
+          },
+        ],
+        isClient: false,
       });
     });
   });
@@ -689,22 +750,24 @@ describe('Schema: RelayCompiler Internal GraphQL Schema Interface', () => {
         [],
         ['extend type User { client_id: ID }'],
       );
-      const userTypeID = schema.expectTypeFromString('User');
-      expect(schema.isServerField(schema.expectField(userTypeID, 'name'))).toBe(
+      const userType = schema.assertCompositeType(
+        schema.expectTypeFromString('User'),
+      );
+      expect(schema.isServerField(schema.expectField(userType, 'name'))).toBe(
         true,
       );
       expect(
-        schema.isServerField(schema.expectField(userTypeID, 'client_id')),
+        schema.isServerField(schema.expectField(userType, 'client_id')),
       ).toBe(false);
     });
 
     it('should check if directive is client only', () => {
       const schema = Schema.create(
-        new Source('type User { name: String}'),
+        new Source('type User { name: String } directive @strong on FIELD'),
         [],
         ['directive @my_directive on QUERY'],
       );
-      expect(schema.isServerDirective('include')).toBe(true);
+      expect(schema.isServerDirective('strong')).toBe(true);
       expect(schema.isServerDirective('my_directive')).toBe(false);
     });
   });
@@ -1133,22 +1196,6 @@ describe('Schema: RelayCompiler Internal GraphQL Schema Interface', () => {
       ]);
     });
 
-    test('assert output type', () => {
-      testValidTypeNames('assertOutputType', [
-        'String',
-        'String!',
-        '[String]',
-        'A',
-        'B',
-        'AB',
-        'A!',
-        '[B]',
-        'Node',
-        'E',
-      ]);
-      testInvalidTypeNames('assertOutputType', ['I']);
-    });
-
     test('assert composite type', () => {
       testValidTypeNames('assertCompositeType', ['A', 'B', 'AB', 'Node']);
       testInvalidTypeNames('assertCompositeType', [
@@ -1290,5 +1337,90 @@ describe('Schema: RelayCompiler Internal GraphQL Schema Interface', () => {
     expect(schema.isPossibleType(Node, A)).toBe(true);
     expect(schema.isPossibleType(Node, B)).toBe(false);
     expect(schema.isPossibleType(Node, C)).toBe(false);
+  });
+
+  test('doTypesOverlap', () => {
+    const schema = Schema.create(
+      new Source(`
+        schema {
+          query: MyQueries
+        }
+        type MyQueries {
+          node: Node
+        }
+        interface Node {
+          id: ID
+        }
+        type User implements Node {
+          id: ID
+        }
+        type Actor {
+          name: String
+        }
+
+        union ActorUser = Actor | User
+      `),
+    );
+    const myQuery = schema.assertCompositeType(
+      schema.expectTypeFromString('MyQueries'),
+    );
+    const query = schema.expectQueryType();
+    const node = schema.assertCompositeType(
+      schema.expectTypeFromString('Node'),
+    );
+    const user = schema.assertCompositeType(
+      schema.expectTypeFromString('User'),
+    );
+    const actor = schema.assertCompositeType(
+      schema.expectTypeFromString('Actor'),
+    );
+    const actorUser = schema.assertCompositeType(
+      schema.expectTypeFromString('ActorUser'),
+    );
+
+    expect(schema.doTypesOverlap(myQuery, query)).toBe(true);
+    expect(schema.doTypesOverlap(node, user)).toBe(true);
+    expect(schema.doTypesOverlap(user, node)).toBe(true);
+    expect(schema.doTypesOverlap(actor, node)).toBe(false);
+    expect(schema.doTypesOverlap(actor, user)).toBe(false);
+    expect(schema.doTypesOverlap(query, user)).toBe(false);
+    expect(schema.doTypesOverlap(actorUser, user)).toBe(true);
+    expect(schema.doTypesOverlap(actorUser, actor)).toBe(true);
+    expect(schema.doTypesOverlap(actorUser, node)).toBe(true);
+  });
+
+  test('extend', () => {
+    let schema = Schema.create(
+      new Source(`
+        directive @my_server_directive on QUERY
+        type User {
+          name: String
+        }
+    `),
+    );
+    expect(schema.getDirective('my_server_directive')).toBeDefined();
+    expect(schema.getDirective('my_client_directive')).not.toBeDefined();
+    schema = schema.extend(
+      parse(`
+      directive @my_client_directive on QUERY
+      type ClientType {
+        value: String
+      }
+      extend type User {
+        lastName: String
+      }
+    `),
+    );
+    expect(schema.getDirective('my_client_directive')).toBeDefined();
+    const user = schema.assertCompositeType(
+      schema.expectTypeFromString('User'),
+    );
+    expect(
+      schema.isServerField(nullthrows(schema.getFieldByName(user, 'name'))),
+    ).toBe(true);
+    expect(
+      schema.isServerField(nullthrows(schema.getFieldByName(user, 'lastName'))),
+    ).toBe(false);
+    expect(schema.getTypeFromString('ClientType')).toBeDefined();
   });
 });

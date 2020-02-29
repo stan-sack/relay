@@ -9,6 +9,8 @@
  * @format
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
 // flowlint untyped-import:off
@@ -21,13 +23,14 @@ const getValueAtPath = require('./getValueAtPath');
 const invariant = require('invariant');
 const useFetchTrackingRef = require('./useFetchTrackingRef');
 const useIsMountedRef = require('./useIsMountedRef');
+const useIsOperationNodeActive = require('./useIsOperationNodeActive');
 const useRelayEnvironment = require('./useRelayEnvironment');
 const warning = require('warning');
 
 const {useCallback, useEffect, useState} = require('react');
 const {
   ConnectionInterface,
-  __internal: {fetchQuery, hasRequestInFlight},
+  __internal: {fetchQuery},
   createOperationDescriptor,
   getSelector,
 } = require('relay-runtime');
@@ -37,17 +40,18 @@ import type {
   Disposable,
   GraphQLResponse,
   Observer,
+  OperationType,
   ReaderFragment,
   ReaderPaginationMetadata,
-  RequestDescriptor,
 } from 'relay-runtime';
 
 export type Direction = 'forward' | 'backward';
 
-export type LoadMoreFn = (
+export type LoadMoreFn<TQuery: OperationType> = (
   count: number,
   options?: {|
     onComplete?: (Error | null) => void,
+    UNSTABLE_extraVariables?: $Shape<$ElementType<TQuery, 'variables'>>,
   |},
 ) => Disposable;
 
@@ -66,9 +70,9 @@ export type UseLoadMoreFunctionArgs = {|
   onReset: () => void,
 |};
 
-function useLoadMoreFunction(
+function useLoadMoreFunction<TQuery: OperationType>(
   args: UseLoadMoreFunctionArgs,
-): [LoadMoreFn, boolean, () => void] {
+): [LoadMoreFn<TQuery>, boolean, () => void] {
   const {
     direction,
     fragmentNode,
@@ -98,6 +102,11 @@ function useLoadMoreFunction(
     fragmentIdentifier,
   );
 
+  const isParentQueryActive = useIsOperationNodeActive(
+    fragmentNode,
+    fragmentRef,
+  );
+
   const shouldReset =
     environment !== mirroredEnvironment ||
     fragmentIdentifier !== mirroredFragmentIdentifier;
@@ -125,7 +134,6 @@ function useLoadMoreFunction(
   const loadMore = useCallback(
     (count, options) => {
       // TODO(T41131846): Fetch/Caching policies for loadMore
-      // TODO(T41140071): Handle loadMore while refetch is in flight and vice-versa
 
       const onComplete = options?.onComplete;
       if (isMountedRef.current !== true) {
@@ -145,14 +153,10 @@ function useLoadMoreFunction(
       }
 
       const fragmentSelector = getSelector(fragmentNode, fragmentRef);
-      const isParentQueryInFlight =
-        fragmentSelector != null &&
-        fragmentSelector.kind !== 'PluralReaderSelector' &&
-        hasRequestInFlight(environment, fragmentSelector.owner);
       if (
         isFetchingRef.current === true ||
         fragmentData == null ||
-        isParentQueryInFlight
+        isParentQueryActive
       ) {
         if (fragmentSelector == null) {
           warning(
@@ -187,9 +191,11 @@ function useLoadMoreFunction(
 
       const parentVariables = fragmentSelector.owner.variables;
       const fragmentVariables = fragmentSelector.variables;
+      const extraVariables = options?.UNSTABLE_extraVariables;
       const baseVariables = {
         ...parentVariables,
         ...fragmentVariables,
+        ...extraVariables,
       };
       const paginationVariables = getPaginationVariables(
         direction,
@@ -253,6 +259,7 @@ function useLoadMoreFunction(
       disposeFetch,
       completeFetch,
       isFetchingRef,
+      isParentQueryActive,
       fragmentData,
       fragmentNode.name,
       fragmentRef,

@@ -9,14 +9,14 @@
  * @emails oncall+relay
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
-const GraphQLCompilerContext = require('../../../core/GraphQLCompilerContext');
+const CompilerContext = require('../../../core/CompilerContext');
 const RelayFlowGenerator = require('../RelayFlowGenerator');
 const RelayIRTransforms = require('../../../core/RelayIRTransforms');
-const Schema = require('../../../core/Schema');
 
-const {transformASTSchema} = require('../../../core/ASTConvert');
 const {
   TestSchema,
   generateTestsFromFixtures,
@@ -26,7 +26,7 @@ const {
 import type {TypeGeneratorOptions} from '../../RelayLanguagePluginInterface';
 
 function generate(text, options: TypeGeneratorOptions, context?) {
-  const relaySchema = transformASTSchema(TestSchema, [
+  const relaySchema = TestSchema.extend([
     ...RelayIRTransforms.schemaExtensions,
     `
       scalar Color
@@ -35,21 +35,24 @@ function generate(text, options: TypeGeneratorOptions, context?) {
       }
     `,
   ]);
-  const {definitions} = parseGraphQLText(relaySchema, text);
-  const compilerSchema = Schema.DEPRECATED__create(TestSchema, relaySchema);
-  return new GraphQLCompilerContext(compilerSchema)
+  const {definitions, schema: extendedSchema} = parseGraphQLText(
+    relaySchema,
+    text,
+  );
+  return new CompilerContext(extendedSchema)
     .addAll(definitions)
     .applyTransforms(RelayFlowGenerator.transforms)
     .documents()
     .map(
       doc =>
         `// ${doc.name}.graphql\n${RelayFlowGenerator.generate(
-          compilerSchema,
+          extendedSchema,
           // $FlowFixMe - `SplitOperation` is incompatible with union type.
           doc,
           // $FlowFixMe - `SplitOperation` is incompatible with union type.
           {
             ...options,
+            // $FlowFixMe - `SplitOperation` is incompatible with union type.
             normalizationIR: context ? context.get(doc.name) : undefined,
           },
         )}`,
@@ -59,19 +62,12 @@ function generate(text, options: TypeGeneratorOptions, context?) {
 
 describe('Snapshot tests', () => {
   function generateContext(text) {
-    const relaySchema = transformASTSchema(
-      TestSchema,
-      RelayIRTransforms.schemaExtensions,
-    );
+    const relaySchema = TestSchema.extend(RelayIRTransforms.schemaExtensions);
     const {definitions, schema: extendedSchema} = parseGraphQLText(
       relaySchema,
       text,
     );
-    const compilerSchema = Schema.DEPRECATED__create(
-      TestSchema,
-      extendedSchema,
-    );
-    return new GraphQLCompilerContext(compilerSchema)
+    return new CompilerContext(extendedSchema)
       .addAll(definitions)
       .applyTransforms([
         ...RelayIRTransforms.commonTransforms,
@@ -88,7 +84,6 @@ describe('Snapshot tests', () => {
           text,
           {
             customScalars: {},
-            existingFragmentNames: new Set(['PhotoFragment']),
             optionalInputFields: [],
             useHaste: true,
             useSingleArtifactDirectory: false,
@@ -108,7 +103,6 @@ describe('Snapshot tests', () => {
           text,
           {
             customScalars: {},
-            existingFragmentNames: new Set(['PhotoFragment']),
             optionalInputFields: [],
             useHaste: false,
             useSingleArtifactDirectory: true,
@@ -128,7 +122,6 @@ describe('Snapshot tests', () => {
           text,
           {
             customScalars: {},
-            existingFragmentNames: new Set(['PhotoFragment']),
             optionalInputFields: [],
             useHaste: false,
             useSingleArtifactDirectory: false,
@@ -149,7 +142,6 @@ it('does not add `%future added values` when the noFutureProofEnums option is se
   `;
   const types = generate(text, {
     customScalars: {},
-    existingFragmentNames: new Set(['PhotoFragment']),
     optionalInputFields: [],
     useHaste: true,
     useSingleArtifactDirectory: false,
@@ -171,7 +163,6 @@ test('import enum definitions from single module', () => {
   const types = generate(text, {
     customScalars: {},
     enumsHasteModule: 'MyGraphQLEnums',
-    existingFragmentNames: new Set([]),
     optionalInputFields: [],
     useHaste: true,
     noFutureProofEnums: false,
@@ -191,7 +182,6 @@ test('import enum definitions from enum specific module', () => {
   const types = generate(text, {
     customScalars: {},
     enumsHasteModule: (enumName: string) => `${enumName}.graphqlenum`,
-    existingFragmentNames: new Set([]),
     optionalInputFields: [],
     useHaste: true,
     noFutureProofEnums: false,
@@ -211,7 +201,6 @@ describe('custom scalars', () => {
   `;
   const generateWithMapping = mapping =>
     generate(text, {
-      existingFragmentNames: new Set([]),
       optionalInputFields: [],
       useHaste: false,
       customScalars: mapping,
@@ -258,7 +247,6 @@ it('imports fragment refs from siblings in a single artifact dir', () => {
   `;
   const types = generate(text, {
     customScalars: {},
-    existingFragmentNames: new Set(['PhotoFragment']),
     optionalInputFields: [],
     // This is what's different from the tests above.
     useHaste: false,

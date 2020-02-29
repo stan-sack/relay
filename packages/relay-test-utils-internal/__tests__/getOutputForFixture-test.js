@@ -7,8 +7,9 @@
  * @format
  * @flow strict
  * @emails oncall+relay
- *
  */
+
+// flowlint ambiguous-object-type:error
 
 'use strict';
 

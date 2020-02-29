@@ -8,19 +8,20 @@
  * @format
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
-const Printer = require('../core/GraphQLIRPrinter');
+const Printer = require('../core/IRPrinter');
 const Profiler = require('../core/GraphQLCompilerProfiler');
 const RelayCodeGenerator = require('./RelayCodeGenerator');
 
 const filterContextForNode = require('../core/filterContextForNode');
 
-import type CompilerContext from '../core/GraphQLCompilerContext';
-import type {IRTransform} from '../core/GraphQLCompilerContext';
-import type {IRValidation} from '../core/GraphQLCompilerContext';
-import type {GeneratedDefinition} from '../core/GraphQLIR';
-import type {GraphQLReporter as Reporter} from '../reporters/GraphQLReporter';
+import type CompilerContext from '../core/CompilerContext';
+import type {IRTransform} from '../core/CompilerContext';
+import type {GeneratedDefinition} from '../core/IR';
+import type {Reporter} from '../reporters/Reporter';
 import type {GeneratedNode} from 'relay-runtime';
 
 export type RelayCompilerTransforms = {
@@ -29,11 +30,7 @@ export type RelayCompilerTransforms = {
   fragmentTransforms: $ReadOnlyArray<IRTransform>,
   printTransforms: $ReadOnlyArray<IRTransform>,
   queryTransforms: $ReadOnlyArray<IRTransform>,
-};
-
-export type RelayCompilerValidations = {
-  codegenValidations: $ReadOnlyArray<IRValidation>,
-  printValidations: $ReadOnlyArray<IRValidation>,
+  ...
 };
 
 function createFragmentContext(
@@ -52,11 +49,10 @@ function createPrintContext(
   context: CompilerContext,
   transforms: RelayCompilerTransforms,
   reporter?: Reporter,
-  validations?: RelayCompilerValidations,
 ): CompilerContext {
   // The unflattened query is used for printing, since flattening creates an
   // invalid query.
-  const printContext = context.applyTransforms(
+  return context.applyTransforms(
     [
       ...transforms.commonTransforms,
       ...transforms.queryTransforms,
@@ -64,21 +60,16 @@ function createPrintContext(
     ],
     reporter,
   );
-  if (validations) {
-    printContext.applyValidations(validations.printValidations, reporter);
-  }
-  return printContext;
 }
 
 function createCodeGenContext(
   context: CompilerContext,
   transforms: RelayCompilerTransforms,
   reporter?: Reporter,
-  validations?: RelayCompilerValidations,
 ): CompilerContext {
   // The flattened query is used for codegen in order to reduce the number of
   // duplicate fields that must be processed during response normalization.
-  const codeGenContext = context.applyTransforms(
+  return context.applyTransforms(
     [
       ...transforms.commonTransforms,
       ...transforms.queryTransforms,
@@ -86,10 +77,6 @@ function createCodeGenContext(
     ],
     reporter,
   );
-  if (validations) {
-    codeGenContext.applyValidations(validations.codegenValidations, reporter);
-  }
-  return codeGenContext;
 }
 
 function compile(
@@ -140,10 +127,21 @@ function compile(
   return results;
 }
 
+const OPERATION_ORDER = {
+  Root: 0,
+  SplitOperation: 1,
+  Fragment: 2,
+};
 function printOperation(printContext: CompilerContext, name: string): string {
   const printableRoot = printContext.getRoot(name);
   return filterContextForNode(printableRoot, printContext)
     .documents()
+    .sort((a, b) => {
+      if (a.kind !== b.kind) {
+        return OPERATION_ORDER[a.kind] - OPERATION_ORDER[b.kind];
+      }
+      return a.name < b.name ? -1 : 1;
+    })
     .map(doc => Printer.print(printContext.getSchema(), doc))
     .join('\n');
 }
@@ -168,7 +166,6 @@ function compileRelayArtifacts(
   context: CompilerContext,
   transforms: RelayCompilerTransforms,
   reporter?: Reporter,
-  validations?: RelayCompilerValidations,
 ): $ReadOnlyArray<[GeneratedDefinition, GeneratedNode]> {
   return Profiler.run('GraphQLCompiler.compile', () => {
     const fragmentContext = createFragmentContext(
@@ -176,18 +173,8 @@ function compileRelayArtifacts(
       transforms,
       reporter,
     );
-    const printContext = createPrintContext(
-      context,
-      transforms,
-      reporter,
-      validations,
-    );
-    const codeGenContext = createCodeGenContext(
-      context,
-      transforms,
-      reporter,
-      validations,
-    );
+    const printContext = createPrintContext(context, transforms, reporter);
+    const codeGenContext = createCodeGenContext(context, transforms, reporter);
     return compile(context, fragmentContext, printContext, codeGenContext);
   });
 }

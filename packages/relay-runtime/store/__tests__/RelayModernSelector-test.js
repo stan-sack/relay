@@ -5,15 +5,17 @@
  * LICENSE file in the root directory of this source tree.
  *
  * @format
- * @flow
+ * @flow strict-local
  * @emails oncall+relay
  */
+
+// flowlint ambiguous-object-type:error
 
 'use strict';
 
 const warning = require('warning');
 
-const {getRequest} = require('../../query/RelayModernGraphQLTag');
+const {getRequest} = require('../../query/GraphQLTag');
 const {
   createOperationDescriptor,
   createRequestDescriptor,

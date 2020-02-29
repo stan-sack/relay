@@ -4,27 +4,29 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  *
- * @flow
+ * @flow strict-local
  * @format
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
-const RelayConnection = require('./RelayConnection');
 const RelayModernRecord = require('./RelayModernRecord');
 
 const invariant = require('invariant');
 
 const {
-  CONDITION,
   CLIENT_EXTENSION,
-  CONNECTION,
+  CONDITION,
+  DEFER,
   FRAGMENT_SPREAD,
   INLINE_DATA_FRAGMENT_SPREAD,
   INLINE_FRAGMENT,
   LINKED_FIELD,
   MODULE_IMPORT,
   SCALAR_FIELD,
+  STREAM,
 } = require('../util/RelayConcreteNode');
 const {
   FRAGMENTS_KEY,
@@ -38,7 +40,6 @@ const {
 } = require('./RelayStoreUtils');
 
 import type {
-  ReaderConnection,
   ReaderFragmentSpread,
   ReaderInlineDataFragmentSpread,
   ReaderLinkedField,
@@ -48,7 +49,6 @@ import type {
   ReaderSelection,
 } from '../util/ReaderNode';
 import type {DataID, Variables} from '../util/RelayRuntimeTypes';
-import type {ConnectionReference} from './RelayConnection';
 import type {
   Record,
   RecordSource,
@@ -73,7 +73,7 @@ class RelayReader {
   _isMissingData: boolean;
   _owner: RequestDescriptor;
   _recordSource: RecordSource;
-  _seenRecords: {[dataID: DataID]: ?Record};
+  _seenRecords: {[dataID: DataID]: ?Record, ...};
   _selector: SingularReaderSelector;
   _variables: Variables;
 
@@ -163,13 +163,14 @@ class RelayReader {
         case INLINE_DATA_FRAGMENT_SPREAD:
           this._createInlineDataFragmentPointer(selection, record, data);
           break;
+        case DEFER:
         case CLIENT_EXTENSION:
           const isMissingData = this._isMissingData;
           this._traverseSelections(selection.selections, record, data);
           this._isMissingData = isMissingData;
           break;
-        case CONNECTION:
-          this._readConnection(selection, record, data);
+        case STREAM:
+          this._traverseSelections(selection.selections, record, data);
           break;
         default:
           (selection: empty);
@@ -180,26 +181,6 @@ class RelayReader {
           );
       }
     }
-  }
-
-  _readConnection(
-    field: ReaderConnection,
-    record: Record,
-    data: SelectorData,
-  ): void {
-    const parentID = RelayModernRecord.getDataID(record);
-    const connectionID = RelayConnection.createConnectionID(
-      parentID,
-      field.label,
-    );
-    const edgesField: ReaderLinkedField = field.edges;
-    const reference: ConnectionReference<mixed> = {
-      variables: this._variables,
-      edgesField,
-      id: connectionID,
-      label: field.label,
-    };
-    data[RelayConnection.CONNECTION_KEY] = reference;
   }
 
   _readScalar(

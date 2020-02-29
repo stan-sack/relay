@@ -8,6 +8,8 @@
  * @format
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
 const React = require('react');
@@ -16,6 +18,7 @@ const ReactRelayQueryFetcher = require('./ReactRelayQueryFetcher');
 
 const areEqual = require('areEqual');
 const buildReactRelayContainer = require('./buildReactRelayContainer');
+const getRootVariablesForFragments = require('./getRootVariablesForFragments');
 const invariant = require('invariant');
 const warning = require('warning');
 
@@ -30,8 +33,8 @@ const {
   createFragmentSpecResolver,
   createOperationDescriptor,
   getDataIDsFromObject,
-  getFragmentOwners,
   getRequest,
+  getSelector,
   getVariablesFromObject,
   isScalarAndEqual,
 } = require('relay-runtime');
@@ -58,10 +61,11 @@ import type {
 } from 'relay-runtime';
 
 type ContainerState = {
-  data: {[key: string]: mixed},
+  data: {[key: string]: mixed, ...},
   relayProp: RelayPaginationProp,
   prevContext: RelayContext,
   contextForChildren: RelayContext,
+  ...
 };
 
 const FORWARD = 'forward';
@@ -77,14 +81,20 @@ export type ConnectionConfig = {
   getFragmentVariables?: FragmentVariablesGetter,
   getVariables: (
     props: Object,
-    paginationInfo: {count: number, cursor: ?string},
+    paginationInfo: {
+      count: number,
+      cursor: ?string,
+      ...
+    },
     fragmentVariables: Variables,
   ) => Variables,
   query: GraphQLTaggedNode,
+  ...
 };
 export type ConnectionData = {
   +edges?: ?$ReadOnlyArray<any>,
   +pageInfo?: ?PageInfo,
+  ...
 };
 
 /**
@@ -253,9 +263,7 @@ function createGetFragmentVariables(
   });
 }
 
-type ReactConnectionMetadata = ConnectionMetadata & {
-  fragmentName: string,
-};
+type ReactConnectionMetadata = ConnectionMetadata & {fragmentName: string, ...};
 
 function findConnectionMetadata(fragments): ReactConnectionMetadata {
   let foundConnectionMetadata = null;
@@ -309,7 +317,7 @@ function toObserver(observerOrCallback: ?ObserverOrCallback): Observer<void> {
 }
 
 function createContainerWithFragments<
-  Props: {},
+  Props: {...},
   TComponent: React.ComponentType<Props>,
 >(
   Component: TComponent,
@@ -381,6 +389,14 @@ function createContainerWithFragments<
       const relayContext = assertRelayContext(nextProps.__relayContext);
       const prevIDs = getDataIDsFromObject(fragments, this.props);
       const nextIDs = getDataIDsFromObject(fragments, nextProps);
+      const prevRootVariables = getRootVariablesForFragments(
+        fragments,
+        this.props,
+      );
+      const nextRootVariables = getRootVariablesForFragments(
+        fragments,
+        nextProps,
+      );
 
       // If the environment has changed or props point to new records then
       // previously fetched data and any pending fetches no longer apply:
@@ -389,7 +405,7 @@ function createContainerWithFragments<
       // - Pending fetches are for the previous records.
       if (
         relayContext.environment !== this.state.prevContext.environment ||
-        relayContext.variables !== this.state.prevContext.variables ||
+        !areEqual(prevRootVariables, nextRootVariables) ||
         !areEqual(prevIDs, nextIDs)
       ) {
         this._cleanup();
@@ -436,8 +452,7 @@ function createContainerWithFragments<
         if (key === '__relayContext') {
           if (
             nextState.prevContext.environment !==
-              this.state.prevContext.environment ||
-            nextState.prevContext.variables !== this.state.prevContext.variables
+            this.state.prevContext.environment
           ) {
             return true;
           }
@@ -474,6 +489,7 @@ function createContainerWithFragments<
       cursor: ?string,
       edgeCount: number,
       hasMore: boolean,
+      ...
     } {
       // Extract connection data and verify there are more edges to fetch
       const {componentRef: _, ...restProps} = this.props;
@@ -660,6 +676,7 @@ function createContainerWithFragments<
         count: number,
         cursor: ?string,
         totalCount: number,
+        ...
       },
       observer: Observer<void>,
       options: ?RefetchOptions,
@@ -670,24 +687,8 @@ function createContainerWithFragments<
         ...restProps,
         ...this.state.data,
       };
-      let rootVariables;
       let fragmentVariables;
-      const fragmentOwners = getFragmentOwners(fragments, restProps);
-      // NOTE: rootVariables are spread down below in a couple of places,
-      // so we compute them here from the fragment owners.
-      // For extra safety, we make sure the rootVariables include the
-      // variables from all owners in this fragmentSpec, even though they
-      // should all point to the same owner
-      Object.keys(fragments).forEach(key => {
-        const fragmentOwner = fragmentOwners[key];
-        const fragmentOwnerVariables = Array.isArray(fragmentOwner)
-          ? fragmentOwner[0]?.variables ?? {}
-          : fragmentOwner?.variables ?? {};
-        rootVariables = {
-          ...rootVariables,
-          ...fragmentOwnerVariables,
-        };
-      });
+      const rootVariables = getRootVariablesForFragments(fragments, restProps);
       fragmentVariables = getVariablesFromObject(fragments, restProps);
       fragmentVariables = {
         ...rootVariables,
@@ -735,10 +736,6 @@ function createContainerWithFragments<
       this._hasFetched = true;
 
       const onNext = (payload, complete) => {
-        const contextVariables = {
-          ...this.props.__relayContext.variables,
-          ...fragmentVariables,
-        };
         const prevData = this._resolver.resolve();
         this._resolver.setVariables(
           getFragmentVariables(
@@ -764,7 +761,6 @@ function createContainerWithFragments<
               data: nextData,
               contextForChildren: {
                 environment: this.props.__relayContext.environment,
-                variables: contextVariables,
               },
             },
             complete,
@@ -849,7 +845,7 @@ function createContainerWithFragments<
  * `fragmentSpec` is memoized once per environment, rather than once per
  * instance of the container constructed/rendered.
  */
-function createContainer<Props: {}, TComponent: React.ComponentType<Props>>(
+function createContainer<Props: {...}, TComponent: React.ComponentType<Props>>(
   Component: TComponent,
   fragmentSpec: GeneratedNodeMap,
   connectionConfig: ConnectionConfig,

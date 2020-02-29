@@ -8,24 +8,22 @@
  * @format
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
 const CodeMarker = require('../util/CodeMarker');
 
-const {
-  createCompilerError,
-  createUserError,
-} = require('../core/RelayCompilerError');
-const {
-  ConnectionInterface,
-  getStorageKey,
-  stableCopy,
-} = require('relay-runtime');
+const {createCompilerError, createUserError} = require('../core/CompilerError');
+const {getStorageKey, stableCopy} = require('relay-runtime');
 
 import type {
   Argument,
+  ArgumentValue,
   ArgumentDefinition,
   ClientExtension,
+  Defer,
+  Stream,
   Metadata,
   Fragment,
   Selection,
@@ -35,15 +33,12 @@ import type {
   FragmentSpread,
   InlineFragment,
   ModuleImport,
-  Connection,
-  ConnectionField,
   InlineDataFragmentSpread,
-} from '../core/GraphQLIR';
+} from '../core/IR';
 import type {Schema, TypeID} from '../core/Schema';
 import type {
   ReaderArgument,
   ReaderArgumentDefinition,
-  ReaderConnection,
   ReaderField,
   ReaderFragment,
   ReaderInlineDataFragmentSpread,
@@ -56,7 +51,7 @@ import type {
 /**
  * @public
  *
- * Converts a GraphQLIR node into a plain JS object representation that can be
+ * Converts an IR node into a plain JS object representation that can be
  * used at runtime.
  */
 function generate(schema: Schema, node: Fragment): ReaderFragment {
@@ -128,16 +123,10 @@ function generateSelections(
           return generateInlineFragment(schema, selection);
         case 'LinkedField':
           return generateLinkedField(schema, selection);
-        case 'ConnectionField':
-          return generateConnectionField(schema, selection);
-        case 'Connection':
-          return generateConnection(schema, selection);
         case 'Defer':
+          return generateDefer(schema, selection);
         case 'Stream':
-          throw createCompilerError(
-            `Unexpected ${selection.kind} IR node in ReaderCodeGenerator.`,
-            [selection.loc],
-          );
+          return generateStream(schema, selection);
         default:
           (selection: empty);
           throw new Error();
@@ -177,6 +166,20 @@ function generateClientExtension(
 ): ReaderSelection {
   return {
     kind: 'ClientExtension',
+    selections: generateSelections(schema, node.selections),
+  };
+}
+
+function generateDefer(schema: Schema, node: Defer): ReaderSelection {
+  return {
+    kind: 'Defer',
+    selections: generateSelections(schema, node.selections),
+  };
+}
+
+function generateStream(schema: Schema, node: Stream): ReaderSelection {
+  return {
+    kind: 'Stream',
     selections: generateSelections(schema, node.selections),
   };
 }
@@ -239,7 +242,7 @@ function generateLinkedField(
   // which may have originally appeared in different orders across an app.
 
   // TODO(T37646905) enable this invariant after splitting the
-  // RelayCodeGenerator-test and running the RelayFieldHandleTransform on
+  // RelayCodeGenerator-test and running the FieldHandleTransform on
   // Reader ASTs.
   //
   //   invariant(
@@ -265,62 +268,6 @@ function generateLinkedField(
     field = {...field, storageKey};
   }
   return field;
-}
-
-function generateConnectionField(
-  schema: Schema,
-  node: ConnectionField,
-): ReaderLinkedField {
-  return generateLinkedField(schema, {
-    name: node.name,
-    alias: node.alias,
-    loc: node.loc,
-    directives: node.directives,
-    metadata: node.metadata,
-    selections: node.selections,
-    type: node.type,
-    connection: false, // this is only on the linked fields with @conneciton
-    handles: null,
-    args: node.args.filter(
-      arg =>
-        !ConnectionInterface.isConnectionCall({name: arg.name, value: null}),
-    ),
-    kind: 'LinkedField',
-  });
-}
-
-function generateConnection(
-  schema: Schema,
-  node: Connection,
-): ReaderConnection {
-  const {EDGES, PAGE_INFO} = ConnectionInterface.get();
-  const selections = generateSelections(schema, node.selections);
-  let edges: ?ReaderLinkedField;
-  let pageInfo: ?ReaderLinkedField;
-  selections.forEach(selection => {
-    if (selection.kind === 'LinkedField') {
-      if (selection.name === EDGES) {
-        edges = selection;
-      } else if (selection.name === PAGE_INFO) {
-        pageInfo = selection;
-      }
-    }
-  });
-  if (edges == null || pageInfo == null) {
-    throw createUserError(
-      `Invalid connection, expected the '${EDGES}' and '${PAGE_INFO}' fields ` +
-        'to exist.',
-      [node.loc],
-    );
-  }
-  return {
-    kind: 'Connection',
-    label: node.label,
-    name: node.name,
-    args: generateArgs(node.args),
-    edges,
-    pageInfo,
-  };
 }
 
 function generateModuleImport(
@@ -363,7 +310,7 @@ function generateScalarField(
   // which may have originally appeared in different orders across an app.
 
   // TODO(T37646905) enable this invariant after splitting the
-  // RelayCodeGenerator-test and running the RelayFieldHandleTransform on
+  // RelayCodeGenerator-test and running the FieldHandleTransform on
   // Reader ASTs.
   //
   //   invariant(
@@ -386,13 +333,15 @@ function generateScalarField(
   return field;
 }
 
-function generateArgument(node: Argument): ReaderArgument | null {
-  const value = node.value;
+function generateArgument(
+  name: string,
+  value: ArgumentValue,
+): ReaderArgument | null {
   switch (value.kind) {
     case 'Variable':
       return {
         kind: 'Variable',
-        name: node.name,
+        name: name,
         variableName: value.variableName,
       };
     case 'Literal':
@@ -400,14 +349,48 @@ function generateArgument(node: Argument): ReaderArgument | null {
         ? null
         : {
             kind: 'Literal',
-            name: node.name,
+            name: name,
             value: stableCopy(value.value),
           };
+    case 'ObjectValue': {
+      const objectKeys = value.fields.map(field => field.name).sort();
+      const objectValues = new Map(
+        value.fields.map(field => {
+          return [field.name, field.value];
+        }),
+      );
+      return {
+        kind: 'ObjectValue',
+        name: name,
+        fields: objectKeys.map(fieldName => {
+          const fieldValue = objectValues.get(fieldName);
+          if (fieldValue == null) {
+            throw createCompilerError('Expected to have object field value');
+          }
+          return (
+            generateArgument(fieldName, fieldValue) ?? {
+              kind: 'Literal',
+              name: fieldName,
+              value: null,
+            }
+          );
+        }),
+      };
+    }
+    case 'ListValue': {
+      return {
+        kind: 'ListValue',
+        name: name,
+        items: value.items.map((item, index) => {
+          return generateArgument(`${name}.${index}`, item);
+        }),
+      };
+    }
     default:
       throw createUserError(
         'ReaderCodeGenerator: Complex argument values (Lists or ' +
           'InputObjects with nested variables) are not supported.',
-        [node.value.loc],
+        [value.loc],
       );
   }
 }
@@ -417,7 +400,7 @@ function generateArgs(
 ): ?$ReadOnlyArray<ReaderArgument> {
   const concreteArguments = [];
   args.forEach(arg => {
-    const concreteArgument = generateArgument(arg);
+    const concreteArgument = generateArgument(arg.name, arg.value);
     if (concreteArgument !== null) {
       concreteArguments.push(concreteArgument);
     }
@@ -427,7 +410,10 @@ function generateArgs(
     : concreteArguments.sort(nameComparator);
 }
 
-function nameComparator(a: {+name: string}, b: {+name: string}): number {
+function nameComparator(
+  a: {+name: string, ...},
+  b: {+name: string, ...},
+): number {
   return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
 }
 

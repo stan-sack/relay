@@ -1,0 +1,40 @@
+==================================== INPUT ====================================
+fragment InlineUntypedFragment on User {
+  ... {
+    name
+  }
+}
+==================================== OUTPUT ===================================
+[
+    Fragment(
+        FragmentDefinition {
+            name: WithLocation {
+                location: "inline-untyped-fragment.graphql":9:31,
+                item: "InlineUntypedFragment",
+            },
+            variable_definitions: [],
+            used_global_variables: [],
+            type_condition: Object(65),
+            directives: [],
+            selections: [
+                InlineFragment {
+                    type_condition: None,
+                    directives: [],
+                    selections: [
+                        ScalarField {
+                            alias: None,
+                            definition: WithLocation {
+                                location: "inline-untyped-fragment.graphql":48:57,
+                                item: FieldID(
+                                    452,
+                                ),
+                            },
+                            arguments: [],
+                            directives: [],
+                        },
+                    ],
+                },
+            ],
+        },
+    ),
+]

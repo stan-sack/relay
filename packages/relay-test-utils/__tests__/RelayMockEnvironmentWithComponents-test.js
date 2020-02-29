@@ -9,6 +9,8 @@
  * @flow strict-local
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
 const React = require('react');
@@ -43,7 +45,7 @@ describe('ReactRelayTestMocker with Containers', () => {
 
     beforeEach(() => {
       const {TestQuery} = generateAndCompile(`
-        query TestQuery($id: ID = "<default>", $scale: Float = 1) {
+        query TestQuery($id: ID = "<default>") {
           user: node(id: $id) {
             id
             name
@@ -79,7 +81,6 @@ describe('ReactRelayTestMocker with Containers', () => {
       expect(operation.request.node.operation.name).toBe('TestQuery');
       expect(operation.request.variables).toEqual({
         id: '<default>',
-        scale: 1,
       });
     });
 
@@ -443,7 +444,7 @@ describe('ReactRelayTestMocker with Containers', () => {
 
     beforeEach(() => {
       const {UserQuery, PageQuery, PageFragment} = generateAndCompile(`
-        query UserQuery($id: ID = "<default>", $first: Int = 5, $cursor: String = "") {
+        query UserQuery($id: ID = "<default>") {
           user: node(id: $id) {
             id
             name

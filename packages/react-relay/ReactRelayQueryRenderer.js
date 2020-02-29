@@ -8,6 +8,8 @@
  * @format
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
 const React = require('react');
@@ -22,7 +24,6 @@ const {
   getRequest,
 } = require('relay-runtime');
 
-import type {FetchPolicy} from './ReactRelayTypes';
 import type {
   CacheConfig,
   GraphQLTaggedNode,
@@ -38,8 +39,10 @@ type RetryCallbacks = {
     | (({
         error?: Error,
         snapshot?: Snapshot,
+        ...
       }) => void),
   handleRetryAfterError: null | ((error: Error) => void),
+  ...
 };
 
 export type RenderProps<T> = {|
@@ -65,7 +68,7 @@ const isBrowser = new Function( // eslint-disable-line
 
 export type Props = {|
   cacheConfig?: ?CacheConfig,
-  fetchPolicy?: FetchPolicy,
+  fetchPolicy?: 'store-and-network' | 'network-only',
   environment: IEnvironment,
   query: ?GraphQLTaggedNode,
   render: (renderProps: RenderProps<Object>) => React.Node,
@@ -203,6 +206,7 @@ class ReactRelayQueryRenderer extends React.Component<Props, State> {
     retryCallbacks.handleDataChange = (params: {
       error?: Error,
       snapshot?: Snapshot,
+      ...
     }): void => {
       const error = params.error == null ? null : params.error;
       const snapshot = params.snapshot == null ? null : params.snapshot;
@@ -288,15 +292,6 @@ class ReactRelayQueryRenderer extends React.Component<Props, State> {
   }
 }
 
-function getContext(
-  environment: IEnvironment,
-  variables: Variables,
-): RelayContext {
-  return {
-    environment,
-    variables,
-  };
-}
 function getLoadingRenderProps(): RenderProps<Object> {
   return {
     error: null,
@@ -363,10 +358,9 @@ function fetchQueryAndComputeStateFromProps(
   if (query) {
     const request = getRequest(query);
     const operation = createOperationDescriptor(request, variables);
-    const relayContext = getContext(
-      genericEnvironment,
-      operation.request.variables,
-    );
+    const relayContext: RelayContext = {
+      environment: genericEnvironment,
+    };
     if (typeof requestCacheKey === 'string' && requestCache[requestCacheKey]) {
       // This same request is already in flight.
 
@@ -452,7 +446,9 @@ function fetchQueryAndComputeStateFromProps(
     }
   } else {
     queryFetcher.dispose();
-    const relayContext = getContext(genericEnvironment, variables);
+    const relayContext: RelayContext = {
+      environment: genericEnvironment,
+    };
     return {
       error: null,
       relayContext,

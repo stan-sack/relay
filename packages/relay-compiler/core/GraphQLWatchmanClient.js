@@ -8,6 +8,9 @@
  * @format
  * @emails oncall+relay
  */
+
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
 const childProcess = require('child_process');
@@ -84,6 +87,7 @@ class GraphQLWatchmanClient {
   ): Promise<{
     root: string,
     relativePath: string,
+    ...
   }> {
     const resp = await this.command('watch-project', baseDir);
     if ('warning' in resp) {

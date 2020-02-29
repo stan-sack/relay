@@ -8,6 +8,8 @@
  * @format
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
 import type {DataID} from '../util/RelayRuntimeTypes';
@@ -33,4 +35,9 @@ function isClientID(id: DataID): boolean {
   return id.indexOf(PREFIX) === 0;
 }
 
-module.exports = {generateClientID, isClientID};
+let localID: number = 0;
+function generateUniqueClientID(): DataID {
+  return `${PREFIX}local:${localID++}`;
+}
+
+module.exports = {generateClientID, generateUniqueClientID, isClientID};

@@ -9,15 +9,20 @@
  * @format
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
 const React = require('react');
 const ReactTestRenderer = require('react-test-renderer');
 const RelayEnvironmentProvider = require('../RelayEnvironmentProvider');
 
+const useFragmentNode = require('../useFragmentNode');
 const useLazyLoadQueryNode = require('../useLazyLoadQueryNode');
 
-const {createOperationDescriptor} = require('relay-runtime');
+const {createOperationDescriptor, getFragment} = require('relay-runtime');
+
+import type {FetchPolicy} from 'relay-runtime';
 
 const defaultFetchPolicy = 'network-only';
 
@@ -42,13 +47,13 @@ function expectToHaveFetched(environment, query) {
     },
   });
   expect(
-    environment.mock.isLoading(query.request.node, query.request.variables),
+    environment.mock.isLoading(query.request.node, query.request.variables, {
+      force: true,
+    }),
   ).toEqual(true);
 }
 
-type Props = {
-  variables: Object,
-};
+type Props = {|variables: {...}, fetchPolicy?: FetchPolicy|};
 
 describe('useLazyLoadQueryNode', () => {
   let environment;
@@ -66,8 +71,8 @@ describe('useLazyLoadQueryNode', () => {
   beforeEach(() => {
     jest.resetModules();
     jest.spyOn(console, 'warn').mockImplementationOnce(() => {});
-    jest.mock('fbjs/lib/ExecutionEnvironment', () => ({
-      canUseDOM: () => true,
+    jest.mock('../ExecutionEnvironment', () => ({
+      isServer: false,
     }));
 
     ({
@@ -90,7 +95,7 @@ describe('useLazyLoadQueryNode', () => {
       }
     }
 
-    const Renderer = props => {
+    const Renderer = (props: Props) => {
       const _query = createOperationDescriptor(gqlQuery, props.variables);
       const data = useLazyLoadQueryNode<_>({
         query: _query,
@@ -145,6 +150,18 @@ describe('useLazyLoadQueryNode', () => {
           ...UserFragment
         }
       }
+
+      fragment RootFragment on Query {
+        node(id: $id) {
+          id
+          name
+          ...UserFragment
+        }
+      }
+
+      query OnlyFragmentsQuery($id: ID) {
+        ...RootFragment
+      }
     `);
     gqlQuery = generated.UserQuery;
     variables = {id: '1'};
@@ -177,6 +194,50 @@ describe('useLazyLoadQueryNode', () => {
 
     const data = environment.lookup(query.fragment).data;
     expectToBeRendered(renderFn, data);
+  });
+
+  it('subscribes to query fragment results and preserves object identity', () => {
+    const instance = render(environment, <Container variables={variables} />);
+
+    expect(instance.toJSON()).toEqual('Fallback');
+    expectToHaveFetched(environment, query);
+    expect(renderFn).not.toBeCalled();
+    expect(environment.retain).toHaveBeenCalledTimes(1);
+
+    environment.mock.resolve(gqlQuery, {
+      data: {
+        node: {
+          __typename: 'User',
+          id: variables.id,
+          name: 'Alice',
+        },
+      },
+    });
+
+    ReactTestRenderer.act(() => {
+      jest.runAllImmediates();
+    });
+    expect(renderFn).toBeCalledTimes(1);
+    const prevData = renderFn.mock.calls[0][0];
+    expect(prevData.node.name).toBe('Alice');
+    renderFn.mockClear();
+    ReactTestRenderer.act(() => {
+      jest.runAllImmediates();
+    });
+
+    environment.commitUpdate(store => {
+      const alice = store.get('1');
+      if (alice != null) {
+        alice.setValue('ALICE', 'name');
+      }
+    });
+    expect(renderFn).toBeCalledTimes(1);
+    const nextData = renderFn.mock.calls[0][0];
+    expect(nextData.node.name).toBe('ALICE');
+    renderFn.mockClear();
+
+    // object identity is preserved for unchanged data such as fragment references
+    expect(nextData.node.__fragments).toBe(prevData.node.__fragments);
   });
 
   it('fetches and renders correctly even if fetched query data still has missing data', () => {
@@ -417,5 +478,82 @@ describe('useLazyLoadQueryNode', () => {
     expect(environment.mock.isLoading(query.request.node, variables)).toEqual(
       false,
     );
+  });
+
+  describe('partial rendering', () => {
+    it('does not suspend at the root if query does not have direct data dependencies', () => {
+      const generated = generateAndCompile(`
+      fragment RootFragment on Query {
+        node(id: $id) {
+          id
+          name
+        }
+      }
+
+      query OnlyFragmentsQuery($id: ID) {
+        ...RootFragment
+      }
+    `);
+      const gqlOnlyFragmentsQuery = generated.OnlyFragmentsQuery;
+      const gqlFragment = generated.RootFragment;
+      const onlyFragsQuery = createOperationDescriptor(
+        gqlOnlyFragmentsQuery,
+        variables,
+      );
+
+      function FragmentComponent(props) {
+        const fragment = getFragment(gqlFragment);
+        const result: $FlowFixMe = useFragmentNode(
+          fragment,
+          props.query,
+          'TestUseFragment',
+        );
+        renderFn(result.data);
+        return null;
+      }
+
+      const Renderer = props => {
+        const _query = createOperationDescriptor(
+          gqlOnlyFragmentsQuery,
+          props.variables,
+        );
+        const data = useLazyLoadQueryNode<_>({
+          componentDisplayName: 'TestDisplayName',
+          fetchPolicy: 'store-or-network',
+          query: _query,
+          renderPolicy: 'partial',
+        });
+        return (
+          <React.Suspense fallback="Fallback around fragment">
+            <FragmentComponent query={data} />
+          </React.Suspense>
+        );
+      };
+
+      const instance = render(environment, <Renderer variables={variables} />);
+
+      // Assert that we suspended at the fragment level and not at the root
+      expect(instance.toJSON()).toEqual('Fallback around fragment');
+      expectToHaveFetched(environment, onlyFragsQuery);
+      expect(renderFn).not.toBeCalled();
+      expect(environment.retain).toHaveBeenCalledTimes(1);
+
+      environment.mock.resolve(gqlOnlyFragmentsQuery, {
+        data: {
+          node: {
+            __typename: 'User',
+            id: variables.id,
+            name: 'Alice',
+          },
+        },
+      });
+
+      expectToBeRendered(renderFn, {
+        node: {
+          id: variables.id,
+          name: 'Alice',
+        },
+      });
+    });
   });
 });

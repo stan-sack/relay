@@ -7,6 +7,9 @@
  * @flow
  * @format
  */
+
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
 const GraphQLWatchmanClient = require('../core/GraphQLWatchmanClient');

@@ -9,6 +9,8 @@
  * @format
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
 const invariant = require('invariant');
@@ -47,7 +49,12 @@ function getRefetchMetadata(
     fragmentNode.name,
   );
 
-  const refetchableRequest = refetchMetadata.operation;
+  // handle both commonjs and es modules
+  const refetchableRequest:
+    | ConcreteRequest
+    | string = (refetchMetadata: $FlowFixMe).operation.default
+    ? (refetchMetadata: $FlowFixMe).operation.default
+    : refetchMetadata.operation;
   const fragmentRefPathInResponse = refetchMetadata.fragmentPathInResult;
   invariant(
     typeof refetchableRequest !== 'string',

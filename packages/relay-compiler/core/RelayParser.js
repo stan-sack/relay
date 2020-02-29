@@ -4,26 +4,28 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  *
- * @flow strict-local
+ * @flow strict
  * @format
  */
+
+// flowlint ambiguous-object-type:error
 
 'use strict';
 
 const Profiler = require('./GraphQLCompilerProfiler');
 
+const orList = require('../util/orList');
 const partitionArray = require('../util/partitionArray');
 
 const {DEFAULT_HANDLE_KEY} = require('../util/DefaultHandleKey');
 const {
-  createCombinedError,
   createCompilerError,
   createUserError,
-  eachWithErrors,
-} = require('./RelayCompilerError');
+  eachWithCombinedError,
+} = require('./CompilerError');
 const {isExecutableDefinitionAST} = require('./SchemaUtils');
 const {getFieldDefinitionLegacy} = require('./getFieldDefinition');
-const {parse: parseGraphQL, parseType, Source} = require('graphql');
+const {parse: parseGraphQL, parseType, print, Source} = require('graphql');
 
 import type {
   Argument,
@@ -40,16 +42,23 @@ import type {
   Root,
   Selection,
   Variable,
-} from './GraphQLIR';
-import type {Schema, TypeID, InputTypeID, FieldArgument} from './Schema';
+} from './IR';
+import type {
+  CompositeTypeID,
+  Argument as FieldArgument,
+  FieldID,
+  InputTypeID,
+  Schema,
+  TypeID,
+} from './Schema';
 import type {GetFieldDefinitionFn} from './getFieldDefinition';
 import type {
   ASTNode,
   ArgumentNode,
   BooleanValueNode,
   DefinitionNode,
-  DirectiveNode,
   DirectiveLocationEnum,
+  DirectiveNode,
   EnumValueNode,
   FieldNode,
   FloatValueNode,
@@ -63,6 +72,7 @@ import type {
   OperationDefinitionNode,
   SelectionSetNode,
   StringValueNode,
+  TypeNode,
   ValueNode,
   VariableNode,
 } from 'graphql';
@@ -125,12 +135,7 @@ function parse(
   filename?: string,
 ): $ReadOnlyArray<Root | Fragment> {
   const ast = parseGraphQL(new Source(text, filename));
-
-  // TODO T24511737 figure out if this is dangerous
-  const parser = new RelayParser(
-    schema.DEPRECATED__extend(ast),
-    ast.definitions,
-  );
+  const parser = new RelayParser(schema.extend(ast), ast.definitions);
   return parser.transform();
 }
 
@@ -183,35 +188,29 @@ class RelayParser {
   }
 
   transform(): $ReadOnlyArray<Root | Fragment> {
-    let errors;
     const nodes = [];
     const entries = new Map();
     // Construct a mapping of name to definition ast + variable definitions.
     // This allows the subsequent AST -> IR tranformation to reference the
     // defined arguments of referenced fragments.
-    errors = eachWithErrors(this._definitions, ([name, definition]) => {
+    eachWithCombinedError(this._definitions, ([name, definition]) => {
       const variableDefinitions = this._buildArgumentDefinitions(definition);
       entries.set(name, {definition, variableDefinitions});
     });
     // Convert the ASTs to IR.
-    if (errors == null) {
-      errors = eachWithErrors(
-        entries.values(),
-        ({definition, variableDefinitions}) => {
-          const node = parseDefinition(
-            this._schema,
-            this._getFieldDefinition,
-            entries,
-            definition,
-            variableDefinitions,
-          );
-          nodes.push(node);
-        },
-      );
-    }
-    if (errors != null && errors.length !== 0) {
-      throw createCombinedError(errors, 'RelayParser');
-    }
+    eachWithCombinedError(
+      entries.values(),
+      ({definition, variableDefinitions}) => {
+        const node = parseDefinition(
+          this._schema,
+          this._getFieldDefinition,
+          entries,
+          definition,
+          variableDefinitions,
+        );
+        nodes.push(node);
+      },
+    );
     return nodes;
   }
 
@@ -315,26 +314,24 @@ class RelayParser {
           [arg.value],
         );
       }
-
-      const typeAST = parseType(typeString);
-      const argType = this._schema.expectTypeFromAST(
-        typeAST,
-        `Unknown type "${typeString}" referenced in the argument definitions.`,
-        null,
-        [arg],
-      );
-      if (!this._schema.isInputType(argType)) {
+      const typeFromAST = this._schema.getTypeFromAST(parseType(typeString));
+      if (typeFromAST == null) {
         throw createUserError(
-          `Expected type "${this._schema.getTypeString(
-            argType,
-          )}" to be an input type in the "${
+          `Unknown type "${typeString}" referenced in the argument definitions.`,
+          null,
+          [arg],
+        );
+      }
+      const type = this._schema.asInputType(typeFromAST);
+      if (type == null) {
+        throw createUserError(
+          `Expected type "${typeString}" to be an input type in the "${
             arg.name.value
           }" argument definitions.`,
           null,
           [arg.value],
         );
       }
-      const type = this._schema.assertInputType(argType);
       const defaultValue =
         defaultValueNode != null
           ? transformValue(
@@ -379,18 +376,24 @@ class RelayParser {
     const variableDefinitions = new Map();
     (operation.variableDefinitions || []).forEach(def => {
       const name = getName(def.variable);
-      const defType = schema.expectTypeFromAST(def.type);
-      if (!schema.isInputType(defType)) {
+      const typeFromAST = schema.getTypeFromAST(def.type);
+      if (typeFromAST == null) {
         throw createUserError(
-          `Expected type "${schema.getTypeString(
-            defType,
-          )}" to be an input type.`,
+          `Unknown type: '${getTypeName(def.type)}'.`,
           null,
           [def.type],
         );
       }
 
-      const type = schema.assertInputType(defType);
+      const type = schema.asInputType(typeFromAST);
+      if (type == null) {
+        throw createUserError(
+          `Expected type "${getTypeName(def.type)}" to be an input type.`,
+          null,
+          [def.type],
+        );
+      }
+
       const defaultValue = def.defaultValue
         ? transformLiteralValue(def.defaultValue, def)
         : null;
@@ -623,18 +626,32 @@ class GraphQLDefinitionParser {
       ),
       'FRAGMENT_DEFINITION',
     );
-    const type = this._schema.assertCompositeType(
-      this._schema.expectTypeFromAST(
-        fragment.typeCondition,
-        `Unknown type '${
-          fragment.typeCondition.name.value
-        }' on the fragment definition '${fragment.name.value}'.`,
+
+    const typeFromAST = this._schema.getTypeFromAST(fragment.typeCondition);
+    if (typeFromAST == null) {
+      throw createUserError(
+        `Fragment "${fragment.name.value}" cannot condition on unknown ` +
+          `type "${String(fragment.typeCondition.name.value)}".`,
         null,
         [fragment.typeCondition],
-      ),
-    );
+      );
+    }
 
-    const selections = this._transformSelections(fragment.selectionSet, type);
+    const type = this._schema.asCompositeType(typeFromAST);
+    if (type == null) {
+      throw createUserError(
+        `Fragment "${fragment.name.value}" cannot condition on non composite ` +
+          `type "${String(type)}".`,
+        null,
+        [fragment.typeCondition],
+      );
+    }
+
+    const selections = this._transformSelections(
+      fragment.selectionSet,
+      type,
+      fragment.typeCondition,
+    );
     const argumentDefinitions = [
       ...buildArgumentDefinitions(this._variableDefinitions),
     ];
@@ -691,15 +708,15 @@ class GraphQLDefinitionParser {
     switch (definition.operation) {
       case 'query':
         operation = 'query';
-        type = schema.expectQueryType(null, null, [definition]);
+        type = schema.expectQueryType();
         break;
       case 'mutation':
         operation = 'mutation';
-        type = schema.expectMutationType(null, null, [definition]);
+        type = schema.expectMutationType();
         break;
       case 'subscription':
         operation = 'subscription';
-        type = schema.expectSubscriptionType(null, null, [definition]);
+        type = schema.expectSubscriptionType();
         break;
       default:
         (definition.operation: empty);
@@ -744,15 +761,24 @@ class GraphQLDefinitionParser {
   _transformSelections(
     selectionSet: SelectionSetNode,
     parentType: TypeID,
+    parentTypeAST?: TypeNode,
   ): $ReadOnlyArray<Selection> {
     return selectionSet.selections.map(selection => {
       let node;
       if (selection.kind === 'Field') {
         node = this._transformField(selection, parentType);
       } else if (selection.kind === 'FragmentSpread') {
-        node = this._transformFragmentSpread(selection, parentType);
+        node = this._transformFragmentSpread(
+          selection,
+          parentType,
+          parentTypeAST,
+        );
       } else if (selection.kind === 'InlineFragment') {
-        node = this._transformInlineFragment(selection, parentType);
+        node = this._transformInlineFragment(
+          selection,
+          parentType,
+          parentTypeAST,
+        );
       } else {
         (selection.kind: empty);
         throw createCompilerError(`Unknown ast kind '${selection.kind}'.`, [
@@ -779,13 +805,45 @@ class GraphQLDefinitionParser {
   _transformInlineFragment(
     fragment: InlineFragmentNode,
     parentType: TypeID,
+    parentTypeAST: ?TypeNode,
   ): InlineFragment {
     const schema = this._schema;
-    const typeCondition = schema.assertCompositeType(
+    let typeCondition =
       fragment.typeCondition != null
-        ? schema.expectTypeFromAST(fragment.typeCondition)
-        : parentType,
+        ? schema.getTypeFromAST(fragment.typeCondition)
+        : parentType;
+
+    if (typeCondition == null) {
+      throw createUserError(
+        'Inline fragments can only be on object, interface or union types' +
+          `, got unknown type '${getTypeName(fragment.typeCondition)}'.`,
+        null,
+        [fragment.typeCondition ?? fragment],
+      );
+    }
+    const typeConditionName = schema.getTypeString(typeCondition);
+    typeCondition = schema.asCompositeType(typeCondition);
+    if (typeCondition == null) {
+      throw createUserError(
+        'Inline fragments can only be on object, interface or union types' +
+          `, got '${typeConditionName}'.`,
+        null,
+        [fragment.typeCondition ?? fragment],
+      );
+    }
+    const rawParentType = this._schema.assertCompositeType(
+      this._schema.getRawType(parentType),
     );
+
+    checkFragmentSpreadTypeCompatibility(
+      this._schema,
+      typeCondition,
+      rawParentType,
+      null,
+      fragment.typeCondition,
+      parentTypeAST,
+    );
+
     const directives = this._transformDirectives(
       fragment.directives || [],
       'INLINE_FRAGMENT',
@@ -793,6 +851,7 @@ class GraphQLDefinitionParser {
     const selections = this._transformSelections(
       fragment.selectionSet,
       typeCondition,
+      fragment.typeCondition,
     );
     return {
       kind: 'InlineFragment',
@@ -807,6 +866,7 @@ class GraphQLDefinitionParser {
   _transformFragmentSpread(
     fragmentSpread: FragmentSpreadNode,
     parentType: TypeID,
+    parentTypeAST: ?TypeNode,
   ): FragmentSpread {
     const fragmentName = getName(fragmentSpread);
     const [argumentDirectives, otherDirectives] = partitionArray(
@@ -829,6 +889,24 @@ class GraphQLDefinitionParser {
         fragmentSpread.name,
       ]);
     }
+
+    const fragmentTypeNode = getFragmentType(fragmentDefinition.definition);
+    const fragmentType = this._schema.assertCompositeType(
+      this._schema.expectTypeFromAST(fragmentTypeNode),
+    );
+    const rawParentType = this._schema.assertCompositeType(
+      this._schema.getRawType(parentType),
+    );
+
+    checkFragmentSpreadTypeCompatibility(
+      this._schema,
+      fragmentType,
+      rawParentType,
+      fragmentSpread.name.value,
+      fragmentSpread,
+      parentTypeAST,
+    );
+
     const fragmentArgumentDefinitions = fragmentDefinition.variableDefinitions;
     const argumentsDirective = argumentDirectives[0];
     let args;
@@ -921,13 +999,14 @@ class GraphQLDefinitionParser {
     const args = this._transformArguments(
       field.arguments || [],
       schema.getFieldArgs(fieldDef),
+      fieldDef,
     );
     const [otherDirectives, clientFieldDirectives] = partitionArray(
       field.directives || [],
       directive => getName(directive) !== CLIENT_FIELD,
     );
     const directives = this._transformDirectives(otherDirectives, 'FIELD');
-    const type = schema.assertOutputType(schema.getFieldType(fieldDef));
+    const type = schema.getFieldType(fieldDef);
 
     const handles = this._transformHandle(name, args, clientFieldDirectives);
     if (schema.isLeafType(schema.getRawType(type))) {
@@ -987,7 +1066,7 @@ class GraphQLDefinitionParser {
     fieldArgs: $ReadOnlyArray<Argument>,
     clientFieldDirectives: $ReadOnlyArray<DirectiveNode>,
   ): ?$ReadOnlyArray<Handle> {
-    let handles: ?Array<Handle>;
+    let handles: ?Array<Handle> = null;
     clientFieldDirectives.forEach(clientFieldDirective => {
       const handleArgument = (clientFieldDirective.arguments || []).find(
         arg => getName(arg) === CLIENT_FIELD_HANDLE,
@@ -1092,6 +1171,8 @@ class GraphQLDefinitionParser {
             defaultValue: item.defaultValue,
           };
         }),
+        null,
+        name,
       );
       return {
         kind: 'Directive',
@@ -1105,12 +1186,25 @@ class GraphQLDefinitionParser {
   _transformArguments(
     args: $ReadOnlyArray<ArgumentNode>,
     argumentDefinitions: $ReadOnlyArray<FieldArgument>,
+    field?: ?FieldID,
+    directiveName?: ?string,
   ): $ReadOnlyArray<Argument> {
     return args.map(arg => {
       const argName = getName(arg);
       const argDef = argumentDefinitions.find(def => def.name === argName);
       if (argDef == null) {
-        throw createUserError(`Unknown argument '${argName}'.`, null, [arg]);
+        const message =
+          `Unknown argument '${argName}'` +
+          (field
+            ? ` on field '${this._schema.getFieldName(field)}'` +
+              ` of type '${this._schema.getTypeString(
+                this._schema.getFieldParentType(field),
+              )}'.`
+            : directiveName != null
+            ? ` on directive '@${directiveName}'.`
+            : '.');
+
+        throw createUserError(message, null, [arg]);
       }
 
       const value = this._transformValue(arg.value, argDef.type);
@@ -1264,7 +1358,7 @@ function transformNonNullLiteral(
       // Parse singular (non-list) values flowing into a list type
       // as scalars, ie without wrapping them in an array.
       if (!schema.isInputType(schema.getListItemType(nullableType))) {
-        throw new createUserError(
+        throw createUserError(
           `Expected type ${schema.getTypeString(
             nullableType,
           )} to be an input type.`,
@@ -1324,13 +1418,32 @@ function transformNonNullLiteral(
     const literalObject = {};
     const fields = [];
     let areAllFieldsScalar = true;
+    const inputType = schema.assertInputObjectType(nullableType);
+    const requiredFieldNames = new Set(
+      schema
+        .getFields(inputType)
+        .filter(field => {
+          return schema.isNonNull(schema.getFieldType(field));
+        })
+        .map(field => schema.getFieldName(field)),
+    );
+
+    const seenFields = new Map();
     ast.fields.forEach(field => {
       const fieldName = getName(field);
-      const fieldID = schema.getFieldByName(nullableType, fieldName);
+      const seenField = seenFields.get(fieldName);
+      if (seenField) {
+        throw createUserError(
+          `Duplicated field name '${fieldName}' in the input object.`,
+          null,
+          [field, seenField],
+        );
+      }
+      const fieldID = schema.getFieldByName(inputType, fieldName);
       if (!fieldID) {
         throw createUserError(
           `Unknown field '${fieldName}' on type '${schema.getTypeString(
-            type,
+            inputType,
           )}'.`,
           null,
           [field],
@@ -1354,8 +1467,24 @@ function transformNonNullLiteral(
         name: fieldName,
         value: fieldValue,
       });
+      seenFields.set(fieldName, field);
+      requiredFieldNames.delete(fieldName);
       areAllFieldsScalar = areAllFieldsScalar && fieldValue.kind === 'Literal';
     });
+    if (requiredFieldNames.size > 0) {
+      const requiredFieldStr = Array.from(requiredFieldNames)
+        .map(item => `'${item}'`)
+        .join(', ');
+      throw createUserError(
+        `Missing non-optional field${
+          requiredFieldNames.size > 1 ? 's:' : ''
+        } ${requiredFieldStr} for input type '${schema.getTypeString(
+          inputType,
+        )}'.`,
+        null,
+        [ast],
+      );
+    }
     if (areAllFieldsScalar) {
       return {
         kind: 'Literal',
@@ -1413,10 +1542,14 @@ function transformNonNullLiteral(
           }
         }
       }
+      const suggestions = schema.getEnumValues(enumType);
+
       // parseLiteral() should return a non-null JavaScript value
       // if the ast value is valid for the type.
       throw createUserError(
-        `Expected a value matching type '${schema.getTypeString(type)}'.`,
+        `Expected a value matching type '${schema.getTypeString(
+          type,
+        )}'. Possible values: ${orList(suggestions)}?'`,
         null,
         [ast],
       );
@@ -1561,6 +1694,70 @@ function getName(ast): string {
     ]);
   }
   return name;
+}
+
+function getTypeName(ast: ?TypeNode): string {
+  return ast ? print(ast) : 'Undefined Type Name';
+}
+
+/**
+ * @private
+ */
+function getFragmentType(ast: ASTDefinitionNode): TypeNode {
+  if (ast.kind === 'FragmentDefinition') {
+    return ast.typeCondition;
+  }
+  throw createCompilerError(
+    'Expected ast node to be a FragmentDefinition node.',
+    null,
+    [ast],
+  );
+}
+
+function checkFragmentSpreadTypeCompatibility(
+  schema: Schema,
+  fragmentType: CompositeTypeID,
+  parentType: TypeID,
+  fragmentName: ?string,
+  fragmentTypeAST: ?TypeNode | ?FragmentSpreadNode,
+  parentTypeAST: ?TypeNode,
+) {
+  if (
+    !schema.doTypesOverlap(fragmentType, schema.assertCompositeType(parentType))
+  ) {
+    const nodes = [];
+    if (parentTypeAST) {
+      nodes.push(parentTypeAST);
+    }
+    if (fragmentTypeAST) {
+      nodes.push(fragmentTypeAST);
+    }
+
+    const possibleConcreteTypes = schema.isAbstractType(parentType)
+      ? Array.from(
+          schema.getPossibleTypes(schema.assertAbstractType(parentType)),
+        )
+      : [];
+    let suggestedTypesMessage = '';
+    if (possibleConcreteTypes.length !== 0) {
+      suggestedTypesMessage = ` Possible concrete types include ${possibleConcreteTypes
+        .sort()
+        .slice(0, 3)
+        .map(type => `'${schema.getTypeString(type)}'`)
+        .join(', ')}, etc.`;
+    }
+
+    throw createUserError(
+      (fragmentName != null
+        ? `Fragment '${fragmentName}' cannot be spread here as objects of `
+        : 'Fragment cannot be spread here as objects of ') +
+        `type '${schema.getTypeString(parentType)}' ` +
+        `can never be of type '${schema.getTypeString(fragmentType)}'.` +
+        suggestedTypesMessage,
+      null,
+      nodes,
+    );
+  }
 }
 
 module.exports = {parse, transform};

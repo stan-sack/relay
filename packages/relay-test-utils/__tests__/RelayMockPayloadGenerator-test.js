@@ -373,18 +373,18 @@ test('check context in the mock resolver', () => {
     },
   );
   expect(checkContext).toMatchInlineSnapshot(`
-Object {
-  "alias": null,
-  "args": Object {},
-  "name": "profile_picture",
-  "parentType": null,
-  "path": Array [
-    "viewer",
-    "actor",
-    "profile_picture",
-  ],
-}
-`);
+    Object {
+      "alias": null,
+      "args": Object {},
+      "name": "profile_picture",
+      "parentType": null,
+      "path": Array [
+        "viewer",
+        "actor",
+        "profile_picture",
+      ],
+    }
+  `);
 });
 
 test('generate mock with manual mock for objects', () => {
@@ -464,19 +464,21 @@ test('generate mock with multiple spreads', () => {
     }
 
     fragment TestFragment on Viewer {
-      ... on User {
-        id
-        name
-        traits
-        profile_picture {
-          uri
-          height
+      actor {
+        ... on User {
+          id
+          name
+          traits
+          profile_picture {
+            uri
+            height
+          }
         }
-      }
-      ... on Page {
-        id
-        name
-        websites
+        ... on Page {
+          id
+          name
+          websites
+        }
       }
     }
   `,
@@ -668,19 +670,30 @@ test('generate mock for with directives and handlers', () => {
             width
             height
           }
+          feedback {
+            comments {
+              edges {
+                node {
+                  ... DeferFragment @defer(if: $RELAY_INCREMENTAL_DELIVERY, label: "DeferLabel")
+                }
+              }
+            }
+          }
         }
         ... on Page {
           id
           pageName: name
         }
-        ... on Comment @defer(if: $RELAY_INCREMENTAL_DELIVERY, label: "DeferLabel") {
-          body {
-            text
-          }
-        }
         username @__clientField(handle: "MyUserName")
       }
-    }`,
+    }
+
+    fragment DeferFragment on Comment {
+      body {
+        text
+      }
+    }
+    `,
   );
 });
 

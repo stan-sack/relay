@@ -8,13 +8,11 @@
  * @format
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
-const {
-  createCombinedError,
-  createUserError,
-  eachWithErrors,
-} = require('./RelayCompilerError');
+const {createUserError, eachWithCombinedError} = require('./CompilerError');
 
 import type {
   Argument,
@@ -23,7 +21,7 @@ import type {
   FragmentSpread,
   LocalArgumentDefinition,
   Variable,
-} from './GraphQLIR';
+} from './IR';
 import type {Schema} from './Schema';
 /**
  * A scope is a mapping of the values for each argument defined by the nearest
@@ -58,7 +56,7 @@ import type {Schema} from './Schema';
  *     bar: 42
  *   }
  */
-export type Scope = {[key: string]: ArgumentValue};
+export type Scope = {[key: string]: ArgumentValue, ...};
 
 /**
  * Creates a scope for a `Root`, with each argument mapped to a variable of the
@@ -151,7 +149,7 @@ function getFragmentScope(
   });
 
   const fragmentScope = {};
-  const errors = eachWithErrors(definitions, definition => {
+  eachWithCombinedError(definitions, definition => {
     if (definition.kind === 'RootArgumentDefinition') {
       if (argMap.has(definition.name)) {
         const argNode = args.find(a => a.name === definition.name);
@@ -197,9 +195,6 @@ function getFragmentScope(
       }
     }
   });
-  if (errors != null && errors.length) {
-    throw createCombinedError(errors);
-  }
   return fragmentScope;
 }
 

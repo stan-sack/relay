@@ -8,6 +8,8 @@
  * @format
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
 const CodegenDirectory = require('./CodegenDirectory');
@@ -24,7 +26,7 @@ const {Map: ImmutableMap} = require('immutable');
 
 import type ASTCache from '../core/ASTCache';
 import type {Schema} from '../core/Schema';
-import type {GraphQLReporter} from '../reporters/GraphQLReporter';
+import type {Reporter} from '../reporters/Reporter';
 import type {CompileResult, File} from './CodegenTypes';
 import type {FileFilter, WatchmanExpression} from './CodegenWatcher';
 import type {SourceControl} from './SourceControl';
@@ -35,28 +37,26 @@ export type ParserConfig = {|
   getFileFilter?: (baseDir: string) => FileFilter,
   getParser: (baseDir: string) => ASTCache,
   getSchemaSource: () => Source,
+  schemaExtensions: $ReadOnlyArray<string>,
   generatedDirectoriesWatchmanExpression?: ?WatchmanExpression,
   watchmanExpression?: ?WatchmanExpression,
   filepaths?: ?Array<string>,
 |};
 
-type ParserConfigs = {
-  [parser: string]: ParserConfig,
-};
-type Parsers = {
-  [parser: string]: ASTCache,
-};
+type ParserConfigs = {[parser: string]: ParserConfig, ...};
+type Parsers = {[parser: string]: ASTCache, ...};
+
+export type IsGeneratedFileFn = (filePath: string) => boolean;
+export type KeepExtraFileFn = (filePath: string) => boolean;
 
 export type WriterConfig = {|
   parser: string,
   baseParsers?: Array<string>,
-  isGeneratedFile: (filePath: string) => boolean,
+  isGeneratedFile: IsGeneratedFileFn,
   writeFiles: WriteFiles,
 |};
 
-type WriterConfigs = {
-  [writer: string]: WriterConfig,
-};
+type WriterConfigs = {[writer: string]: WriterConfig, ...};
 
 export type WriteFilesOptions = {|
   onlyValidate: boolean,
@@ -64,7 +64,7 @@ export type WriteFilesOptions = {|
   documents: ImmutableMap<string, DocumentNode>,
   baseDocuments: ImmutableMap<string, DocumentNode>,
   sourceControl: ?SourceControl,
-  reporter: GraphQLReporter,
+  reporter: Reporter,
   generatedDirectories?: Array<string>,
 |};
 
@@ -84,17 +84,18 @@ class CodegenRunner {
   onComplete: ?OnCompleteCallback;
 
   // parser => writers that are affected by it
-  parserWriters: {[parser: string]: Set<string>};
-  _reporter: GraphQLReporter;
+  parserWriters: {[parser: string]: Set<string>, ...};
+  _reporter: Reporter;
   _sourceControl: ?SourceControl;
 
   constructor(options: {
     parserConfigs: ParserConfigs,
     writerConfigs: WriterConfigs,
     onlyValidate: boolean,
-    reporter: GraphQLReporter,
+    reporter: Reporter,
     sourceControl: ?SourceControl,
     onComplete?: OnCompleteCallback,
+    ...
   }) {
     this.parsers = {};
     this.parserConfigs = options.parserConfigs;
@@ -275,7 +276,7 @@ class CodegenRunner {
         if (baseParsers) {
           baseParsers.forEach(baseParserName => {
             invariant(
-              this.parsers[baseParserName] == null,
+              this.parsers[baseParserName] != null,
               'Trying to access an uncompiled base parser config: %s',
               baseParserName,
             );
@@ -304,7 +305,7 @@ class CodegenRunner {
           createSchema(
             this.parserConfigs[parser].getSchemaSource(),
             baseDocuments.toArray(),
-            [],
+            this.parserConfigs[parser].schemaExtensions,
           ),
         );
 
@@ -390,7 +391,7 @@ class CodegenRunner {
         : anyFileFilter,
       async files => {
         invariant(
-          this.parsers[parserName] == null,
+          this.parsers[parserName] != null,
           'Trying to watch an uncompiled parser config: %s',
           parserName,
         );

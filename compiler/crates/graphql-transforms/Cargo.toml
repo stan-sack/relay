@@ -1,0 +1,23 @@
+[project]
+name = "graphql-transforms"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+errors = { path = "../errors" }
+common = { path = "../common" }
+interner = { path = "../interner" }
+graphql-ir = { path = "../graphql-ir" }
+graphql-text-printer = { path = "../graphql-text-printer" }
+schema = { path = "../schema" }
+fnv = "1.0.6"
+
+[dev-dependencies]
+criterion = "0.3"
+fixture-tests = { path = "../fixture-tests" }
+graphql-syntax = { path = "../graphql-syntax" }
+test-schema = { path = "../test-schema" }
+
+[[bench]]
+name = "transforms"
+harness = false

@@ -8,16 +8,18 @@
  * @format
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
 const Matchers = require('./Matchers');
-const RelayTestSchema = require('./RelayTestSchema');
-const RelayTestSchemaPath = require('./RelayTestSchemaPath');
 
 const parseGraphQLText = require('./parseGraphQLText');
+const printAST = require('./printAST');
 const simpleClone = require('./simpleClone');
 
 const {generateAndCompile, generateWithTransforms} = require('./TestCompiler');
+const {TestSchema, testSchemaPath} = require('./TestSchema');
 const {
   generateTestsFromFixtures,
   FIXTURE_TAG,
@@ -28,15 +30,18 @@ const {createMockEnvironment, unwrapContainer} = require('relay-test-utils');
  * The public interface to Relay Test Utils.
  */
 module.exports = {
-  createMockEnvironment: createMockEnvironment,
-  testSchemaPath: RelayTestSchemaPath,
-  TestSchema: RelayTestSchema,
+  FIXTURE_TAG,
+
+  TestSchema,
+
+  createMockEnvironment,
   generateAndCompile,
   generateTestsFromFixtures,
   generateWithTransforms,
   matchers: Matchers,
-  simpleClone,
   parseGraphQLText,
+  printAST,
+  simpleClone,
+  testSchemaPath,
   unwrapContainer,
-  FIXTURE_TAG,
 };

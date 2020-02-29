@@ -9,16 +9,21 @@
  * @format
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
 const useLazyLoadQueryNode = require('./useLazyLoadQueryNode');
 const useMemoOperationDescriptor = require('./useMemoOperationDescriptor');
 
-import type {FetchPolicy} from './QueryResource';
+const {useTrackLoadQueryInRender} = require('./loadQuery');
+
 import type {
   CacheConfig,
+  FetchPolicy,
   GraphQLTaggedNode,
   OperationType,
+  RenderPolicy,
 } from 'relay-runtime';
 
 function useLazyLoadQuery<TQuery: OperationType>(
@@ -28,14 +33,21 @@ function useLazyLoadQuery<TQuery: OperationType>(
     fetchKey?: string | number,
     fetchPolicy?: FetchPolicy,
     networkCacheConfig?: CacheConfig,
+    UNSTABLE_renderPolicy?: RenderPolicy,
   |},
 ): $ElementType<TQuery, 'response'> {
+  // We need to use this hook in order to be able to track if
+  // loadQuery was called during render
+  useTrackLoadQueryInRender();
+
   const query = useMemoOperationDescriptor(gqlQuery, variables);
   const data = useLazyLoadQueryNode({
-    query,
+    componentDisplayName: 'useLazyLoadQuery()',
     fetchKey: options?.fetchKey,
     fetchPolicy: options?.fetchPolicy,
-    componentDisplayName: 'useLazyLoadQuery()',
+    networkCacheConfig: options?.networkCacheConfig,
+    query,
+    renderPolicy: options?.UNSTABLE_renderPolicy,
   });
   return data;
 }

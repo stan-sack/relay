@@ -8,6 +8,8 @@
  * @flow strict-local
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
 const React = require('react');
@@ -24,6 +26,7 @@ type Props = {
   query: $FlowFixMe,
   variables: Variables,
   children: React.Element<$FlowFixMe>,
+  ...
 };
 
 class RelayTestRenderer extends React.Component<Props, $FlowFixMe> {
@@ -65,8 +68,6 @@ class RelayTestRenderer extends React.Component<Props, $FlowFixMe> {
         value={{
           environment:
             this.props.environment || this.props.children.props.environment,
-          variables:
-            this.props.variables || this.props.children.props.variables,
         }}>
         {React.cloneElement(
           this.props.children,

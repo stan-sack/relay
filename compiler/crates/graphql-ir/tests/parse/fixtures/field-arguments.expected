@@ -1,0 +1,159 @@
+==================================== INPUT ====================================
+query TestQuery {
+  task(number: 123) {
+    title
+  }
+  settings(environment: WEB) {
+    notificationSounds
+  }
+  checkinSearchQuery(query: {query: "Relay"}) {
+    query
+  }
+}
+==================================== OUTPUT ===================================
+[
+    Operation(
+        OperationDefinition {
+            kind: Query,
+            name: WithLocation {
+                location: "field-arguments.graphql":6:16,
+                item: "TestQuery",
+            },
+            type_: Object(0),
+            variable_definitions: [],
+            directives: [],
+            selections: [
+                LinkedField {
+                    alias: None,
+                    definition: WithLocation {
+                        location: "field-arguments.graphql":17:24,
+                        item: FieldID(
+                            14,
+                        ),
+                    },
+                    arguments: [
+                        Argument {
+                            name: WithLocation {
+                                location: "field-arguments.graphql":25:31,
+                                item: "number",
+                            },
+                            value: WithLocation {
+                                location: "field-arguments.graphql":33:36,
+                                item: Constant(
+                                    Int(
+                                        123,
+                                    ),
+                                ),
+                            },
+                        },
+                    ],
+                    directives: [],
+                    selections: [
+                        ScalarField {
+                            alias: None,
+                            definition: WithLocation {
+                                location: "field-arguments.graphql":39:49,
+                                item: FieldID(
+                                    26,
+                                ),
+                            },
+                            arguments: [],
+                            directives: [],
+                        },
+                    ],
+                },
+                LinkedField {
+                    alias: None,
+                    definition: WithLocation {
+                        location: "field-arguments.graphql":53:64,
+                        item: FieldID(
+                            12,
+                        ),
+                    },
+                    arguments: [
+                        Argument {
+                            name: WithLocation {
+                                location: "field-arguments.graphql":65:76,
+                                item: "environment",
+                            },
+                            value: WithLocation {
+                                location: "field-arguments.graphql":78:81,
+                                item: Constant(
+                                    Enum(
+                                        "WEB",
+                                    ),
+                                ),
+                            },
+                        },
+                    ],
+                    directives: [],
+                    selections: [
+                        ScalarField {
+                            alias: None,
+                            definition: WithLocation {
+                                location: "field-arguments.graphql":84:107,
+                                item: FieldID(
+                                    493,
+                                ),
+                            },
+                            arguments: [],
+                            directives: [],
+                        },
+                    ],
+                },
+                LinkedField {
+                    alias: None,
+                    definition: WithLocation {
+                        location: "field-arguments.graphql":111:132,
+                        item: FieldID(
+                            0,
+                        ),
+                    },
+                    arguments: [
+                        Argument {
+                            name: WithLocation {
+                                location: "field-arguments.graphql":133:138,
+                                item: "query",
+                            },
+                            value: WithLocation {
+                                location: "field-arguments.graphql":140:156,
+                                item: Constant(
+                                    Object(
+                                        [
+                                            ConstantArgument {
+                                                name: WithLocation {
+                                                    location: "field-arguments.graphql":141:146,
+                                                    item: "query",
+                                                },
+                                                value: WithLocation {
+                                                    location: "field-arguments.graphql":148:155,
+                                                    item: String(
+                                                        "Relay",
+                                                    ),
+                                                },
+                                            },
+                                        ],
+                                    ),
+                                ),
+                            },
+                        },
+                    ],
+                    directives: [],
+                    selections: [
+                        ScalarField {
+                            alias: None,
+                            definition: WithLocation {
+                                location: "field-arguments.graphql":159:169,
+                                item: FieldID(
+                                    53,
+                                ),
+                            },
+                            arguments: [],
+                            directives: [],
+                        },
+                    ],
+                },
+            ],
+        },
+    ),
+]

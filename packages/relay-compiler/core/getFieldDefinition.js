@@ -4,13 +4,15 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  *
- * @flow strict-local
+ * @flow strict
  * @format
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
-const {createCompilerError} = require('./RelayCompilerError');
+const {createCompilerError} = require('./CompilerError');
 const {SchemaMetaFieldDef, TypeMetaFieldDef} = require('graphql');
 
 import type {Schema, TypeID, FieldID} from './Schema';
@@ -46,12 +48,19 @@ function getFieldDefinitionStrict(
     schemaFieldDef =
       queryType != null ? schema.getFieldByName(queryType, '__type') : null;
   } else if (hasTypeName && fieldName === '__typename') {
-    schemaFieldDef = schema.getFieldByName(type, '__typename');
+    schemaFieldDef = schema.getFieldByName(
+      schema.assertCompositeType(type),
+      '__typename',
+    );
   } else if (hasTypeName && fieldName === '__id') {
-    schemaFieldDef = schema.getFieldByName(type, '__id');
+    schemaFieldDef = schema.getFieldByName(
+      schema.assertCompositeType(type),
+      '__id',
+    );
   } else if (schema.isInterface(type) || schema.isObject(type)) {
-    if (schema.hasField(schema.assertCompositeType(type), fieldName)) {
-      schemaFieldDef = schema.getFieldByName(type, fieldName);
+    const compositeType = schema.assertCompositeType(type);
+    if (schema.hasField(compositeType, fieldName)) {
+      schemaFieldDef = schema.getFieldByName(compositeType, fieldName);
     } else {
       return null;
     }

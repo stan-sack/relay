@@ -9,6 +9,8 @@
  * @format
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
 const React = require('react');
@@ -140,7 +142,7 @@ describe('useRefetchableFragment', () => {
     // Set up renderers
     Renderer = props => null;
 
-    const Container = (props: {userRef?: {}, fragment: $FlowFixMe}) => {
+    const Container = (props: {userRef?: {...}, fragment: $FlowFixMe, ...}) => {
       // We need a render a component to run a Hook
       const artificialUserRef = useMemo(
         () => ({
@@ -159,10 +161,7 @@ describe('useRefetchableFragment', () => {
     };
 
     const ContextProvider = ({children}) => {
-      // TODO(T39494051) - We set empty variables in relay context to make
-      // Flow happy, but useRefetchableFragment does not use them, instead it uses
-      // the variables from the fragment owner.
-      const relayContext = useMemo(() => ({environment, variables: {}}), []);
+      const relayContext = useMemo(() => ({environment}), []);
 
       return (
         <ReactRelayContext.Provider value={relayContext}>
@@ -176,10 +175,13 @@ describe('useRefetchableFragment', () => {
       owner?: $FlowFixMe,
       userRef?: $FlowFixMe,
       fragment?: $FlowFixMe,
+      ...
     }) => {
       const {isConcurrent = false, ...props} = args ?? {};
       return TestRenderer.create(
         <React.Suspense fallback="Fallback">
+          {/* $FlowFixMe(site=www,mobile) this comment suppresses an error found improving the
+           * type of React$Node */}
           <ContextProvider>
             <Container owner={query} {...props} />
           </ContextProvider>

@@ -9,6 +9,8 @@
  * @format
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
 const React = require('react');
@@ -25,10 +27,7 @@ type Props = $ReadOnly<{|
 
 function RelayEnvironmentProvider(props: Props): React.Node {
   const {children, environment} = props;
-  // TODO(T39494051) - We're setting empty variables here to make Flow happy
-  // and for backwards compatibility, while we remove variables from context
-  // in favor of fragment ownershipt
-  const context = useMemo(() => ({environment, variables: {}}), [environment]);
+  const context = useMemo(() => ({environment}), [environment]);
   return (
     <ReactRelayContext.Provider value={context}>
       {children}

@@ -1,0 +1,16 @@
+[project]
+name = "graphql-text-printer"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+common = { path = "../common" }
+interner = { path = "../interner" }
+graphql-ir = { path = "../graphql-ir" }
+graphql-syntax = { path = "../graphql-syntax" }
+schema = {path = "../schema"}
+fnv = "1.0.6"
+
+[dev-dependencies]
+fixture-tests = {path = "../fixture-tests"}
+test-schema = { path = "../test-schema" }

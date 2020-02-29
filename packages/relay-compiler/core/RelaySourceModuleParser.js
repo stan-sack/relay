@@ -8,6 +8,8 @@
  * @format
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
 const ASTCache = require('./ASTCache');
@@ -25,12 +27,10 @@ import type {FileFilter} from '../codegen/CodegenWatcher';
 import type {GraphQLTagFinder} from '../language/RelayLanguagePluginInterface';
 import type {DocumentNode} from 'graphql';
 
-const parseGraphQL = Profiler.instrument(GraphQL.parse, 'GraphQL.parse');
+export type GetFileFilter = (baseDir: string) => FileFilter;
 
-module.exports = (
-  tagFinder: GraphQLTagFinder,
-): $TEMPORARY$object<{|
-  getFileFilter: (baseDir: string) => FileFilter,
+export type SourceModuleParser = {|
+  getFileFilter: GetFileFilter,
   getParser: (baseDir: string) => ASTCache,
   parseFile: (baseDir: string, file: File) => ?DocumentNode,
   parseFileWithSources: (
@@ -40,7 +40,14 @@ module.exports = (
     +document: DocumentNode,
     +sources: $ReadOnlyArray<string>,
   |},
-|}> => {
+|};
+
+const parseGraphQL = Profiler.instrument(GraphQL.parse, 'GraphQL.parse');
+
+module.exports = (
+  tagFinder: GraphQLTagFinder,
+  getFileFilter?: GetFileFilter,
+): SourceModuleParser => {
   const memoizedTagFinder = memoizedFind.bind(null, tagFinder);
 
   function parseFile(baseDir: string, file: File): ?DocumentNode {
@@ -102,7 +109,7 @@ module.exports = (
     });
   }
 
-  function getFileFilter(baseDir: string): FileFilter {
+  function defaultGetFileFilter(baseDir: string): FileFilter {
     return (file: File) => {
       const filePath = path.join(baseDir, file.relPath);
       let text = '';
@@ -121,7 +128,7 @@ module.exports = (
 
   return {
     getParser,
-    getFileFilter,
+    getFileFilter: getFileFilter ?? defaultGetFileFilter,
     parseFile,
     parseFileWithSources,
   };

@@ -619,8 +619,8 @@ describe('ReactRelayQueryRenderer', () => {
       render = jest.fn(() => <ContextGetter />);
     });
 
-    it('sets an environment and variables on context', () => {
-      expect.assertions(2);
+    it('sets an environment on context', () => {
+      expect.assertions(1);
       ReactTestRenderer.create(
         <ReactRelayQueryRenderer
           environment={environment}
@@ -632,10 +632,9 @@ describe('ReactRelayQueryRenderer', () => {
       environment.mock.resolve(TestQuery, response);
 
       expect(relayContext.environment).toBe(environment);
-      expect(relayContext.variables).toEqual(variables);
     });
 
-    it('sets an environment and variables on context with empty query', () => {
+    it('sets an environment on context with empty query', () => {
       variables = {foo: 'bar'};
       ReactTestRenderer.create(
         <ReactRelayQueryRenderer
@@ -652,11 +651,10 @@ describe('ReactRelayQueryRenderer', () => {
         retry: null,
       }).toBeRendered();
       expect(relayContext.environment).toBe(environment);
-      expect(relayContext.variables).toEqual(variables);
     });
 
     it('updates the context when the environment changes', () => {
-      expect.assertions(3);
+      expect.assertions(2);
       const renderer = ReactTestRenderer.create(
         <PropsSetter>
           <ReactRelayQueryRenderer
@@ -679,11 +677,10 @@ describe('ReactRelayQueryRenderer', () => {
 
       expect(relayContext).not.toBe(previousContext);
       expect(relayContext.environment).toBe(environment);
-      expect(relayContext.variables).toEqual(variables);
     });
 
     it('updates the context when the query changes', () => {
-      expect.assertions(3);
+      expect.assertions(2);
       const renderer = ReactTestRenderer.create(
         <PropsSetter>
           <ReactRelayQueryRenderer
@@ -706,11 +703,10 @@ describe('ReactRelayQueryRenderer', () => {
 
       expect(relayContext).not.toBe(previousContext);
       expect(relayContext.environment).toBe(environment);
-      expect(relayContext.variables).toEqual(variables);
     });
 
     it('updates the context when variables change', () => {
-      expect.assertions(3);
+      expect.assertions(5);
       const renderer = ReactTestRenderer.create(
         <PropsSetter>
           <ReactRelayQueryRenderer
@@ -733,13 +729,37 @@ describe('ReactRelayQueryRenderer', () => {
 
       expect(relayContext).not.toBe(previousContext);
       expect(relayContext.environment).toBe(environment);
-      expect(relayContext.variables).toEqual({
-        id: '<default>',
+
+      render.mockClear();
+
+      environment.mock.resolve(TestQuery, {
+        data: {
+          node: {
+            __typename: 'User',
+            id: '<default>',
+            name: 'Default',
+          },
+        },
       });
+      const owner = createOperationDescriptor(TestQuery, variables);
+      expect({
+        error: null,
+        props: {
+          node: {
+            id: '<default>',
+            __fragments: {
+              TestFragment: {},
+            },
+            __fragmentOwner: owner.request,
+            __id: '<default>',
+          },
+        },
+        retry: expect.any(Function),
+      }).toBeRendered();
     });
 
     it('does not update the context for equivalent variables', () => {
-      expect.assertions(3);
+      expect.assertions(2);
       variables = {foo: ['bar']};
       const renderer = ReactTestRenderer.create(
         <PropsSetter>
@@ -754,7 +774,6 @@ describe('ReactRelayQueryRenderer', () => {
       environment.mock.resolve(TestQuery, response);
       variables = simpleClone(variables);
       const previousContext = relayContext;
-      const previousVariables = previousContext.variables;
       renderer.getInstance().setProps({
         environment,
         query: TestQuery,
@@ -764,7 +783,6 @@ describe('ReactRelayQueryRenderer', () => {
 
       expect(relayContext).toBe(previousContext);
       expect(relayContext.environment).toBe(environment);
-      expect(relayContext.variables).toBe(previousVariables);
     });
   });
 
@@ -1260,11 +1278,15 @@ describe('ReactRelayQueryRenderer', () => {
       environment.mockClear();
       renderer.getInstance().setProps(nextProps);
       environment.mock.resolve(NextQuery, response); // trigger retain
-      expect(environment.retain.mock.calls[0][0].dataID).toBe('client:root');
-      expect(environment.retain.mock.calls[0][0].node).toBe(
+      expect(environment.retain.mock.calls[0][0].root.dataID).toBe(
+        'client:root',
+      );
+      expect(environment.retain.mock.calls[0][0].root.node).toBe(
         NextQuery.operation,
       );
-      expect(environment.retain.mock.calls[0][0].variables).toEqual(variables);
+      expect(environment.retain.mock.calls[0][0].root.variables).toEqual(
+        variables,
+      );
     });
 
     it('renders a pending state', () => {
@@ -1363,11 +1385,15 @@ describe('ReactRelayQueryRenderer', () => {
         },
       });
       expect(environment.retain.mock.calls.length).toBe(1);
-      expect(environment.retain.mock.calls[0][0].dataID).toBe('client:root');
-      expect(environment.retain.mock.calls[0][0].node).toBe(
+      expect(environment.retain.mock.calls[0][0].root.dataID).toBe(
+        'client:root',
+      );
+      expect(environment.retain.mock.calls[0][0].root.node).toBe(
         NextQuery.operation,
       );
-      expect(environment.retain.mock.calls[0][0].variables).toEqual(variables);
+      expect(environment.retain.mock.calls[0][0].root.variables).toEqual(
+        variables,
+      );
       expect(environment.retain.mock.dispose).not.toBeCalled();
     });
 
@@ -1460,11 +1486,15 @@ describe('ReactRelayQueryRenderer', () => {
         },
       });
       expect(environment.retain).toBeCalled();
-      expect(environment.retain.mock.calls[0][0].dataID).toBe('client:root');
-      expect(environment.retain.mock.calls[0][0].node).toBe(
+      expect(environment.retain.mock.calls[0][0].root.dataID).toBe(
+        'client:root',
+      );
+      expect(environment.retain.mock.calls[0][0].root.node).toBe(
         NextQuery.operation,
       );
-      expect(environment.retain.mock.calls[0][0].variables).toEqual(variables);
+      expect(environment.retain.mock.calls[0][0].root.variables).toEqual(
+        variables,
+      );
       expect(prevDispose).toBeCalled();
       expect(environment.retain.mock.dispose).not.toBeCalled();
     });

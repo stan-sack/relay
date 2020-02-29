@@ -4,17 +4,17 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  *
- * All rights reserved.
- *
  * @flow strict-local
  * @format
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
-const {createUserError} = require('../core/RelayCompilerError');
+const {createUserError} = require('../core/CompilerError');
 
-import type {ArgumentDefinition, Fragment} from '../core/GraphQLIR';
+import type {ArgumentDefinition, Fragment} from '../core/IR';
 import type {Schema} from '../core/Schema';
 
 /**

@@ -9,6 +9,8 @@
  * @format
  */
 
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
 const React = require('react');
@@ -117,8 +119,8 @@ describe('useRefetchableFragmentNode', () => {
     jest.mock('scheduler', () => {
       return jest.requireActual('scheduler/unstable_mock');
     });
-    jest.mock('fbjs/lib/ExecutionEnvironment', () => ({
-      canUseDOM: () => true,
+    jest.mock('../ExecutionEnvironment', () => ({
+      isServer: false,
     }));
     renderSpy = jest.fn();
 
@@ -238,9 +240,10 @@ describe('useRefetchableFragmentNode', () => {
     Renderer = props => null;
 
     const Container = (props: {
-      userRef?: {},
+      userRef?: {...},
       owner: OperationDescriptor,
       fragment: $FlowFixMe,
+      ...
     }) => {
       // We need a render a component to run a Hook
       const [owner, _setOwner] = useState<OperationDescriptor>(props.owner);
@@ -273,12 +276,7 @@ describe('useRefetchableFragmentNode', () => {
 
     const ContextProvider = ({children}) => {
       const [env, _setEnv] = useState(environment);
-      // TODO(T39494051) - We set empty variables in relay context to make
-      // Flow happy, but useRefetchableFragmentNode does not use them, instead it uses
-      // the variables from the fragment owner.
-      const relayContext = useMemo(() => ({environment: env, variables: {}}), [
-        env,
-      ]);
+      const relayContext = useMemo(() => ({environment: env}), [env]);
 
       setEnvironment = _setEnv;
 
@@ -294,6 +292,7 @@ describe('useRefetchableFragmentNode', () => {
       owner?: $FlowFixMe,
       userRef?: $FlowFixMe,
       fragment?: $FlowFixMe,
+      ...
     }): $FlowFixMe => {
       const {isConcurrent = false, ...props} = args ?? {};
       let renderer;
@@ -301,6 +300,8 @@ describe('useRefetchableFragmentNode', () => {
         renderer = TestRenderer.create(
           <ErrorBoundary fallback={({error}) => `Error: ${error.message}`}>
             <React.Suspense fallback="Fallback">
+              {/* $FlowFixMe(site=www,mobile) this comment suppresses an error found improving the
+               * type of React$Node */}
               <ContextProvider>
                 <Container owner={query} {...props} />
               </ContextProvider>
@@ -319,7 +320,7 @@ describe('useRefetchableFragmentNode', () => {
   });
 
   describe('initial render', () => {
-    // The bulk of initial render behavior is covered in useFragmentNodes-test,
+    // The bulk of initial render behavior is covered in useFragmentNode-test,
     // so this suite covers the basic cases as a sanity check.
     it('should throw error if fragment is plural', () => {
       jest.spyOn(console, 'error').mockImplementationOnce(() => {});
@@ -419,7 +420,7 @@ describe('useRefetchableFragmentNode', () => {
       jest
         .spyOn(
           require('relay-runtime').__internal,
-          'getPromiseForRequestInFlight',
+          'getPromiseForActiveRequest',
         )
         .mockImplementationOnce(() => Promise.resolve());
 
@@ -498,7 +499,7 @@ describe('useRefetchableFragmentNode', () => {
       // Assert query is tentatively retained while component is suspended
       expect(env.retain).toBeCalledTimes(1);
       expect(env.retain.mock.calls[0][0]).toEqual(
-        expected.refetchQuery?.root ?? refetchQuery.root,
+        expected.refetchQuery ?? refetchQuery,
       );
     }
 
@@ -688,7 +689,7 @@ describe('useRefetchableFragmentNode', () => {
       // Assert refetch query was retained
       expect(release).not.toBeCalled();
       expect(environment.retain).toBeCalledTimes(1);
-      expect(environment.retain.mock.calls[0][0]).toEqual(refetchQuery.root);
+      expect(environment.retain.mock.calls[0][0]).toEqual(refetchQuery);
     });
 
     it('refetches new variables correctly when refetching same id', () => {
@@ -749,7 +750,7 @@ describe('useRefetchableFragmentNode', () => {
       // Assert refetch query was retained
       expect(release).not.toBeCalled();
       expect(environment.retain).toBeCalledTimes(1);
-      expect(environment.retain.mock.calls[0][0]).toEqual(refetchQuery.root);
+      expect(environment.retain.mock.calls[0][0]).toEqual(refetchQuery);
     });
 
     it('with correct id from refetchable fragment when using nested fragment', () => {
@@ -831,7 +832,7 @@ describe('useRefetchableFragmentNode', () => {
       // Assert refetch query was retained
       expect(release).not.toBeCalled();
       expect(environment.retain).toBeCalledTimes(1);
-      expect(environment.retain.mock.calls[0][0]).toEqual(refetchQuery.root);
+      expect(environment.retain.mock.calls[0][0]).toEqual(refetchQuery);
     });
 
     it('refetches correctly when refetching multiple times', () => {
@@ -901,7 +902,7 @@ describe('useRefetchableFragmentNode', () => {
         // Assert refetch query was retained
         expect(release).not.toBeCalled();
         expect(environment.retain).toBeCalledTimes(1);
-        expect(environment.retain.mock.calls[0][0]).toEqual(refetchQuery.root);
+        expect(environment.retain.mock.calls[0][0]).toEqual(refetchQuery);
       };
 
       // Refetch once
@@ -974,9 +975,7 @@ describe('useRefetchableFragmentNode', () => {
       // Assert refetch query was retained
       expect(release).not.toBeCalled();
       expect(environment.retain).toBeCalledTimes(1);
-      expect(environment.retain.mock.calls[0][0]).toEqual(
-        refetchQueryWithArgs.root,
-      );
+      expect(environment.retain.mock.calls[0][0]).toEqual(refetchQueryWithArgs);
     });
 
     it('refetches new variables correctly when using @arguments with literal values', () => {
@@ -1043,9 +1042,7 @@ describe('useRefetchableFragmentNode', () => {
       // Assert refetch query was retained
       expect(release).not.toBeCalled();
       expect(environment.retain).toBeCalledTimes(1);
-      expect(environment.retain.mock.calls[0][0]).toEqual(
-        refetchQueryWithArgs.root,
-      );
+      expect(environment.retain.mock.calls[0][0]).toEqual(refetchQueryWithArgs);
     });
 
     it('subscribes to changes in refetched data', () => {
@@ -1092,7 +1089,7 @@ describe('useRefetchableFragmentNode', () => {
       // Assert refetch query was retained
       expect(release).not.toBeCalled();
       expect(environment.retain).toBeCalledTimes(1);
-      expect(environment.retain.mock.calls[0][0]).toEqual(refetchQuery.root);
+      expect(environment.retain.mock.calls[0][0]).toEqual(refetchQuery);
 
       // Update refetched data
       environment.commitPayload(refetchQuery, {
@@ -1163,7 +1160,7 @@ describe('useRefetchableFragmentNode', () => {
       // Assert refetch query was retained
       expect(release).not.toBeCalled();
       expect(environment.retain).toBeCalledTimes(1);
-      expect(environment.retain.mock.calls[0][0]).toEqual(refetchQuery.root);
+      expect(environment.retain.mock.calls[0][0]).toEqual(refetchQuery);
 
       // Set new environment
       const newEnvironment = createMockEnvironment();
@@ -1263,7 +1260,7 @@ describe('useRefetchableFragmentNode', () => {
       // Assert refetch query was retained
       expect(release).not.toBeCalled();
       expect(environment.retain).toBeCalledTimes(1);
-      expect(environment.retain.mock.calls[0][0]).toEqual(refetchQuery.root);
+      expect(environment.retain.mock.calls[0][0]).toEqual(refetchQuery);
 
       // Pass new parent fragment ref with different variables
       const newVariables = {...variables, scale: 32};
@@ -1527,7 +1524,10 @@ describe('useRefetchableFragmentNode', () => {
             renderFragment();
             renderSpy.mockClear();
             TestRenderer.act(() => {
-              refetch({id: '1'}, {fetchPolicy, renderPolicy});
+              refetch(
+                {id: '1'},
+                {fetchPolicy, UNSTABLE_renderPolicy: renderPolicy},
+              );
             });
 
             // Assert request is not started
@@ -1567,7 +1567,10 @@ describe('useRefetchableFragmentNode', () => {
             expectFragmentResults([{data: initialUser}]);
 
             TestRenderer.act(() => {
-              refetch({id: '4'}, {fetchPolicy, renderPolicy});
+              refetch(
+                {id: '4'},
+                {fetchPolicy, UNSTABLE_renderPolicy: renderPolicy},
+              );
             });
 
             // Assert that fragment is refetching with the right variables and
@@ -1634,7 +1637,10 @@ describe('useRefetchableFragmentNode', () => {
             renderFragment();
             renderSpy.mockClear();
             TestRenderer.act(() => {
-              refetch({id: '4'}, {fetchPolicy, renderPolicy});
+              refetch(
+                {id: '4'},
+                {fetchPolicy, UNSTABLE_renderPolicy: renderPolicy},
+              );
             });
 
             // Assert request is started
@@ -1667,7 +1673,10 @@ describe('useRefetchableFragmentNode', () => {
             renderFragment();
             renderSpy.mockClear();
             TestRenderer.act(() => {
-              refetch({id: '1'}, {fetchPolicy, renderPolicy});
+              refetch(
+                {id: '1'},
+                {fetchPolicy, UNSTABLE_renderPolicy: renderPolicy},
+              );
             });
 
             // Assert request is not started
@@ -1707,7 +1716,10 @@ describe('useRefetchableFragmentNode', () => {
             expectFragmentResults([{data: initialUser}]);
 
             TestRenderer.act(() => {
-              refetch({id: '4'}, {fetchPolicy, renderPolicy});
+              refetch(
+                {id: '4'},
+                {fetchPolicy, UNSTABLE_renderPolicy: renderPolicy},
+              );
             });
 
             // Assert that fragment is refetching with the right variables and
@@ -1781,7 +1793,10 @@ describe('useRefetchableFragmentNode', () => {
             expectFragmentResults([{data: initialUser}]);
 
             TestRenderer.act(() => {
-              refetch({id: '4'}, {fetchPolicy, renderPolicy});
+              refetch(
+                {id: '4'},
+                {fetchPolicy, UNSTABLE_renderPolicy: renderPolicy},
+              );
             });
 
             expectFragmentIsRefetching(renderer, {
@@ -1835,7 +1850,10 @@ describe('useRefetchableFragmentNode', () => {
             renderFragment();
             renderSpy.mockClear();
             TestRenderer.act(() => {
-              refetch({id: '1'}, {fetchPolicy, renderPolicy});
+              refetch(
+                {id: '1'},
+                {fetchPolicy, UNSTABLE_renderPolicy: renderPolicy},
+              );
             });
 
             // Assert request is not started
@@ -1875,7 +1893,10 @@ describe('useRefetchableFragmentNode', () => {
             expectFragmentResults([{data: initialUser}]);
 
             TestRenderer.act(() => {
-              refetch({id: '4'}, {fetchPolicy, renderPolicy});
+              refetch(
+                {id: '4'},
+                {fetchPolicy, UNSTABLE_renderPolicy: renderPolicy},
+              );
             });
 
             // Assert that fragment is refetching with the right variables and
@@ -1942,7 +1963,10 @@ describe('useRefetchableFragmentNode', () => {
             renderFragment();
             renderSpy.mockClear();
             TestRenderer.act(() => {
-              refetch({id: '4'}, {fetchPolicy, renderPolicy});
+              refetch(
+                {id: '4'},
+                {fetchPolicy, UNSTABLE_renderPolicy: renderPolicy},
+              );
             });
 
             // Assert request is started
@@ -1976,7 +2000,10 @@ describe('useRefetchableFragmentNode', () => {
             renderFragment();
             renderSpy.mockClear();
             TestRenderer.act(() => {
-              refetch({id: '1'}, {fetchPolicy, renderPolicy});
+              refetch(
+                {id: '1'},
+                {fetchPolicy, UNSTABLE_renderPolicy: renderPolicy},
+              );
             });
 
             // Assert request is not started
@@ -2016,7 +2043,10 @@ describe('useRefetchableFragmentNode', () => {
             expectFragmentResults([{data: initialUser}]);
 
             TestRenderer.act(() => {
-              refetch({id: '4'}, {fetchPolicy, renderPolicy});
+              refetch(
+                {id: '4'},
+                {fetchPolicy, UNSTABLE_renderPolicy: renderPolicy},
+              );
             });
 
             // Assert that fragment is refetching with the right variables and
@@ -2083,7 +2113,10 @@ describe('useRefetchableFragmentNode', () => {
             const renderer = renderFragment();
             renderSpy.mockClear();
             TestRenderer.act(() => {
-              refetch({id: '4'}, {fetchPolicy, renderPolicy});
+              refetch(
+                {id: '4'},
+                {fetchPolicy, UNSTABLE_renderPolicy: renderPolicy},
+              );
             });
 
             // Assert component suspended
@@ -2140,7 +2173,10 @@ describe('useRefetchableFragmentNode', () => {
           expectFragmentResults([{data: initialUser}]);
 
           TestRenderer.act(() => {
-            refetch({id: '1'}, {fetchPolicy, renderPolicy});
+            refetch(
+              {id: '1'},
+              {fetchPolicy, UNSTABLE_renderPolicy: renderPolicy},
+            );
           });
 
           // Assert that fragment is refetching with the right variables and
@@ -2189,7 +2225,10 @@ describe('useRefetchableFragmentNode', () => {
           expectFragmentResults([{data: initialUser}]);
 
           TestRenderer.act(() => {
-            refetch({id: '4'}, {fetchPolicy, renderPolicy});
+            refetch(
+              {id: '4'},
+              {fetchPolicy, UNSTABLE_renderPolicy: renderPolicy},
+            );
           });
 
           // Assert that fragment is refetching with the right variables and
@@ -2244,7 +2283,10 @@ describe('useRefetchableFragmentNode', () => {
           renderFragment();
           renderSpy.mockClear();
           TestRenderer.act(() => {
-            refetch({id: '1'}, {fetchPolicy, renderPolicy});
+            refetch(
+              {id: '1'},
+              {fetchPolicy, UNSTABLE_renderPolicy: renderPolicy},
+            );
           });
 
           // Assert request is not started
@@ -2277,7 +2319,10 @@ describe('useRefetchableFragmentNode', () => {
           renderFragment();
           renderSpy.mockClear();
           TestRenderer.act(() => {
-            refetch({id: '4'}, {fetchPolicy, renderPolicy});
+            refetch(
+              {id: '4'},
+              {fetchPolicy, UNSTABLE_renderPolicy: renderPolicy},
+            );
           });
 
           // Assert request is not started
@@ -2345,7 +2390,10 @@ describe('useRefetchableFragmentNode', () => {
         renderFragment();
         renderSpy.mockClear();
         TestRenderer.act(() => {
-          refetch({id: '1'}, {fetchPolicy, renderPolicy});
+          refetch(
+            {id: '1'},
+            {fetchPolicy, UNSTABLE_renderPolicy: renderPolicy},
+          );
         });
 
         // Assert request is started
@@ -2413,7 +2461,10 @@ describe('useRefetchableFragmentNode', () => {
         renderFragment();
         renderSpy.mockClear();
         TestRenderer.act(() => {
-          refetch({id: '1'}, {fetchPolicy, renderPolicy});
+          refetch(
+            {id: '1'},
+            {fetchPolicy, UNSTABLE_renderPolicy: renderPolicy},
+          );
         });
 
         // Assert request is started
@@ -2486,7 +2537,10 @@ describe('useRefetchableFragmentNode', () => {
         const renderer = renderFragment();
         renderSpy.mockClear();
         TestRenderer.act(() => {
-          refetch({id: '1'}, {fetchPolicy, renderPolicy});
+          refetch(
+            {id: '1'},
+            {fetchPolicy, UNSTABLE_renderPolicy: renderPolicy},
+          );
         });
 
         // Assert request is started
@@ -2516,7 +2570,10 @@ describe('useRefetchableFragmentNode', () => {
         environment.execute.mockClear();
         const refetchVariables2 = {id: '4', scale: 16};
         TestRenderer.act(() => {
-          refetch({id: '4'}, {fetchPolicy, renderPolicy});
+          refetch(
+            {id: '4'},
+            {fetchPolicy, UNSTABLE_renderPolicy: renderPolicy},
+          );
         });
 
         // Assert first request was canceled
@@ -2544,7 +2601,10 @@ describe('useRefetchableFragmentNode', () => {
         const renderer = renderFragment();
         renderSpy.mockClear();
         TestRenderer.act(() => {
-          refetch({id: '2'}, {fetchPolicy, renderPolicy});
+          refetch(
+            {id: '2'},
+            {fetchPolicy, UNSTABLE_renderPolicy: renderPolicy},
+          );
         });
 
         // Assert request is started
@@ -2575,7 +2635,10 @@ describe('useRefetchableFragmentNode', () => {
         const renderer = renderFragment();
         renderSpy.mockClear();
         TestRenderer.act(() => {
-          refetch({id: '1'}, {fetchPolicy, renderPolicy});
+          refetch(
+            {id: '1'},
+            {fetchPolicy, UNSTABLE_renderPolicy: renderPolicy},
+          );
         });
 
         // Assert request is started
@@ -2618,7 +2681,10 @@ describe('useRefetchableFragmentNode', () => {
         renderSpy.mockClear();
         let disposable;
         TestRenderer.act(() => {
-          disposable = refetch({id: '1'}, {fetchPolicy, renderPolicy});
+          disposable = refetch(
+            {id: '1'},
+            {fetchPolicy, UNSTABLE_renderPolicy: renderPolicy},
+          );
         });
 
         // Assert request is started
@@ -2777,7 +2843,7 @@ describe('useRefetchableFragmentNode', () => {
         // Assert refetch query was retained
         expect(release).not.toBeCalled();
         expect(environment.retain).toBeCalledTimes(1);
-        expect(environment.retain.mock.calls[0][0]).toEqual(refetchQuery.root);
+        expect(environment.retain.mock.calls[0][0]).toEqual(refetchQuery);
       });
 
       it('refetches new variables correctly when refetching same id', () => {
@@ -2849,7 +2915,7 @@ describe('useRefetchableFragmentNode', () => {
         // Assert refetch query was retained
         expect(release).not.toBeCalled();
         expect(environment.retain).toBeCalledTimes(1);
-        expect(environment.retain.mock.calls[0][0]).toEqual(refetchQuery.root);
+        expect(environment.retain.mock.calls[0][0]).toEqual(refetchQuery);
       });
     });
 
@@ -2938,9 +3004,7 @@ describe('useRefetchableFragmentNode', () => {
         // Assert refetch query was retained
         expect(newRelease).not.toBeCalled();
         expect(newEnvironment.retain).toBeCalledTimes(1);
-        expect(newEnvironment.retain.mock.calls[0][0]).toEqual(
-          refetchQuery.root,
-        );
+        expect(newEnvironment.retain.mock.calls[0][0]).toEqual(refetchQuery);
 
         // Should be able to use the new data if switched to new environment
         renderSpy.mockClear();

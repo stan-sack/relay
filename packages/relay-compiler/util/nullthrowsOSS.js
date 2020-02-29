@@ -7,18 +7,19 @@
  * @flow strict
  * @format
  */
+
+// flowlint ambiguous-object-type:error
+
 'use strict';
 
-var nullthrows: <T>(x: ?T, message?: string) => T = function<T>(
+function nullthrows<T>(
   x: ?T,
   message?: string = 'Got unexpected null or undefined',
 ): T {
-  if (x != null) {
-    return x;
+  if (x == null) {
+    throw new Error(message);
   }
-  var error = new Error(message);
-  (error: $FlowFixMe).framesToPop = 1; // Skip nullthrows own stack frame.
-  throw error;
-};
+  return x;
+}
 
 module.exports = nullthrows;
